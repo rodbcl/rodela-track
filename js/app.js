@@ -5,8 +5,9 @@ import {
   WEEKDAYS, MONTHS, parseNum, fmtNum, uid, normName, clone, debounce, fmtDuration,
 } from './util.js';
 import { lineChart } from './chart.js';
+import { createDieta } from './dieta.js';
 
-const APP_VERSION = '0.1.0';
+const APP_VERSION = '0.2.0';
 
 const state = {
   templates: [],
@@ -25,7 +26,7 @@ const $back = document.getElementById('back');
 const $actions = document.getElementById('top-actions');
 
 const ICON = {
-  chev: '<svg viewBox="0 0 24 24"><path d="M9 5l7 7-7 7"/></svg>',
+  chev: '<svg class="chev" viewBox="0 0 24 24"><path d="M9 5l7 7-7 7"/></svg>',
   left: '<svg viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7"/></svg>',
   up: '<svg viewBox="0 0 24 24"><path d="M6 15l6-6 6 6"/></svg>',
   down: '<svg viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg>',
@@ -38,7 +39,10 @@ const icon = (name) => h('span', { style: 'display:contents', html: ICON[name] }
 // ======================================================================
 // Inicialização
 // ======================================================================
+let dieta;
+
 async function boot() {
+  dieta = createDieta({ state, go, render, rerender, icon, pickFile });
   await loadAll();
   if (!state.templates.length && !(await db.get('kv', 'seeded'))) await seed();
   document.querySelectorAll('#tabbar button').forEach((b) => b.addEventListener('click', () => switchTab(b.dataset.tab)));
@@ -52,6 +56,7 @@ async function loadAll() {
   state.sessions = sortSessions(await db.getAll('sessions'));
   state.draft = (await db.get('kv', 'draft')) || null;
   state.lastBackup = (await db.get('kv', 'lastBackup')) || null;
+  await dieta.load();
 }
 
 function sortSessions(arr) {
@@ -68,7 +73,7 @@ async function seed() {
 // ======================================================================
 // Navegação
 // ======================================================================
-const roots = { treino: treinoHome, historico: historicoView, dieta: dietaView, ajustes: ajustesView };
+const roots = { treino: treinoHome, historico: historicoView, dieta: () => dieta.dietaView(), ajustes: ajustesView };
 
 function current() {
   return state.stack.length ? state.stack[state.stack.length - 1] : roots[state.tab]();
@@ -99,6 +104,7 @@ function stopTicker() { if (ticker) { clearInterval(ticker); ticker = null; } }
 async function render({ keepScroll = false } = {}) {
   const v = current();
   stopTicker();
+  if (state.cleanup) { try { state.cleanup(); } catch { /* */ } state.cleanup = null; }
   const y = window.scrollY;
   document.body.classList.toggle('sub', state.stack.length > 0);
   $title.textContent = v.title;
@@ -108,7 +114,8 @@ async function render({ keepScroll = false } = {}) {
   document.querySelectorAll('#tabbar button').forEach((b) => b.classList.toggle('active', b.dataset.tab === state.tab));
   const root = h('div');
   $view.replaceChildren(root);
-  await v.render(root);
+  const cleanup = await v.render(root);
+  if (typeof cleanup === 'function') state.cleanup = cleanup;
   window.scrollTo(0, keepScroll ? y : 0);
 }
 const rerender = () => render({ keepScroll: true });
@@ -694,20 +701,6 @@ function maxOrNull(arr) {
 }
 
 // ======================================================================
-// Aba Dieta (etapa 2)
-// ======================================================================
-function dietaView() {
-  return {
-    title: 'Dieta',
-    render(root) {
-      root.append(h('div', { class: 'empty' },
-        h('b', null, 'Em construção'),
-        'O módulo de dieta (TACO, receitas, refeições, meta de kcal, código de barras e scan da tabela nutricional) chega na próxima etapa.'));
-    },
-  };
-}
-
-// ======================================================================
 // Aba Ajustes
 // ======================================================================
 function ajustesView() {
@@ -783,7 +776,7 @@ function pickFile(accept, cb) {
 }
 
 function buildBackup() {
-  return { app: 'rodela-track', schema: 1, version: APP_VERSION, exportedAt: new Date().toISOString(), templates: state.templates, sessions: state.sessions };
+  return { app: 'rodela-track', schema: 2, version: APP_VERSION, exportedAt: new Date().toISOString(), templates: state.templates, sessions: state.sessions, ...dieta.backupData() };
 }
 
 async function markBackup() {
@@ -822,8 +815,10 @@ async function importBackup(file) {
   try { data = JSON.parse(await file.text()); } catch { toast('Arquivo inválido'); return; }
   if (data?.app !== 'rodela-track' || !Array.isArray(data.sessions)) { toast('Este arquivo não é um backup do Rodela Track'); return; }
   const when = data.exportedAt ? new Date(data.exportedAt).toLocaleDateString('pt-BR') : '?';
-  if (!confirm(`Restaurar backup de ${when}?\n${data.sessions.length} treinos, ${data.templates?.length || 0} modelos.\n\nIsso SUBSTITUI os dados atuais.`)) return;
-  await db.replaceAll({ templates: data.templates || [], sessions: data.sessions });
+  const diet = data.days ? `, ${data.days.length} dias de dieta, ${data.recipes?.length || 0} receitas, ${data.foods?.length || 0} alimentos` : '';
+  if (!confirm(`Restaurar backup de ${when}?\n${data.sessions.length} treinos, ${data.templates?.length || 0} modelos${diet}.\n\nIsso SUBSTITUI os dados atuais.`)) return;
+  await db.replaceAll({ templates: data.templates || [], sessions: data.sessions, foods: data.foods, recipes: data.recipes, days: data.days });
+  await dieta.restore(data);
   await loadAll();
   toast('Backup restaurado');
   render();

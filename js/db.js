@@ -1,6 +1,7 @@
 // IndexedDB — armazenamento local no iPhone
 const DB_NAME = 'rodela-track';
-const DB_VERSION = 1;
+const DB_VERSION = 2;
+export const DATA_STORES = ['templates', 'sessions', 'foods', 'recipes', 'days'];
 
 let dbPromise;
 
@@ -16,7 +17,12 @@ export function openDB() {
           s.createIndex('date', 'date');
           db.createObjectStore('kv'); // chave/valor: rascunho, configurações
         }
-        // v2 (módulo Dieta) será adicionado aqui
+        if (e.oldVersion < 2) {
+          const f = db.createObjectStore('foods', { keyPath: 'id' }); // alimentos personalizados
+          f.createIndex('ean', 'ean');
+          db.createObjectStore('recipes', { keyPath: 'id' });
+          db.createObjectStore('days', { keyPath: 'date' });      // diário alimentar
+        }
       };
       req.onsuccess = () => resolve(req.result);
       req.onerror = () => reject(req.error);
@@ -61,21 +67,23 @@ export async function del(store, key) {
   return txDone(t);
 }
 
-/** Substitui templates e treinos (restauração de backup). */
-export async function replaceAll({ templates = [], sessions = [] }) {
+/** Substitui os dados (restauração de backup). `data` = { store: [...] } */
+export async function replaceAll(data) {
   const db = await openDB();
-  const t = db.transaction(['templates', 'sessions'], 'readwrite');
-  const ts = t.objectStore('templates');
-  const ss = t.objectStore('sessions');
-  ts.clear(); ss.clear();
-  for (const x of templates) ts.put(x);
-  for (const x of sessions) ss.put(x);
+  const stores = DATA_STORES.filter((k) => Array.isArray(data[k]));
+  const t = db.transaction(stores, 'readwrite');
+  for (const k of stores) {
+    const os = t.objectStore(k);
+    os.clear();
+    for (const x of data[k]) os.put(x);
+  }
   return txDone(t);
 }
 
 export async function wipe() {
   const db = await openDB();
-  const t = db.transaction(['templates', 'sessions', 'kv'], 'readwrite');
-  for (const s of ['templates', 'sessions', 'kv']) t.objectStore(s).clear();
+  const all = [...DATA_STORES, 'kv'];
+  const t = db.transaction(all, 'readwrite');
+  for (const s of all) t.objectStore(s).clear();
   return txDone(t);
 }
