@@ -39,6 +39,7 @@ Veja [GUIA-GITHUB-PAGES.md](GUIA-GITHUB-PAGES.md).
 - **0.2.0**: módulo Dieta — base TACO, Meus alimentos, receitas (com peso final do prato), 4 refeições, clonar refeição/dia, repetir de ontem, meta de kcal com divisão 40/30/30 (editável), código de barras (Open Food Facts), foto da tabela (OCR offline) e colar texto (Texto ao Vivo).
 
 - **0.3.0**: timer de descanso com contagem regressiva e aviso sonoro (entre séries / entre exercícios / por exercício, ajustável ±15 s), tela ligada durante o treino; receitas entram inteiras na refeição com um toque (½, 1, 1,5, 2 receitas ao editar).
+- **0.3.1**: correção — a atualização agora sempre baixa os arquivos novos (ignorava o cache do GitHub Pages).
 
 ## Testar no iPhone pela rede local
 

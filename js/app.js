@@ -6,8 +6,10 @@ import {
 } from './util.js';
 import { lineChart } from './chart.js';
 import { createDieta } from './dieta.js';
+import { unlockAudio, beep, keepAwake, fmtClock } from './rest.js';
 
-const APP_VERSION = '0.2.0';
+const APP_VERSION = '0.3.1';
+const DEFAULT_SETTINGS = { restSet: 90, restEx: 120, sound: true, wake: true };
 
 const state = {
   templates: [],
@@ -16,7 +18,8 @@ const state = {
   lastBackup: null,
   tab: 'treino',
   stack: [],
-  rest: null,        // timestamp do início do descanso
+  rest: null,        // { end, total, label, fired }
+  settings: { ...DEFAULT_SETTINGS },
   histMonth: null,   // {y, m}
 };
 
@@ -49,6 +52,36 @@ async function boot() {
   $back.addEventListener('click', back);
   render();
   registerSW();
+  setInterval(restTick, 250);
+}
+
+// ======================================================================
+// Descanso
+// ======================================================================
+function startRest(seconds, label) {
+  if (!seconds || seconds <= 0) { state.rest = null; state.onRest?.(); return; }
+  state.rest = { end: Date.now() + seconds * 1000, total: seconds, label, fired: false };
+  state.onRest?.();
+}
+
+function restTick() {
+  const r = state.rest;
+  if (!r) return;
+  const left = (r.end - Date.now()) / 1000;
+  if (left <= 0 && !r.fired) {
+    r.fired = true;
+    r.doneAt = Date.now();
+    if (-left < 20) { // se o app estava em segundo plano há muito tempo, não apita atrasado
+      if (state.settings.sound) beep();
+      toast('Descanso acabou! Próxima série');
+    }
+  }
+  if (r.fired && Date.now() - r.doneAt > 6000) state.rest = null;
+  state.onRest?.();
+}
+
+async function saveSettings() {
+  await db.put('kv', state.settings, 'settings');
 }
 
 async function loadAll() {
@@ -56,6 +89,7 @@ async function loadAll() {
   state.sessions = sortSessions(await db.getAll('sessions'));
   state.draft = (await db.get('kv', 'draft')) || null;
   state.lastBackup = (await db.get('kv', 'lastBackup')) || null;
+  state.settings = { ...DEFAULT_SETTINGS, ...((await db.get('kv', 'settings')) || {}) };
   await dieta.load();
 }
 
@@ -105,6 +139,8 @@ async function render({ keepScroll = false } = {}) {
   const v = current();
   stopTicker();
   if (state.cleanup) { try { state.cleanup(); } catch { /* */ } state.cleanup = null; }
+  state.onRest = null;
+  document.body.classList.remove('resting');
   const y = window.scrollY;
   document.body.classList.toggle('sub', state.stack.length > 0);
   $title.textContent = v.title;
@@ -241,7 +277,7 @@ async function startSession(t) {
     startedAt: Date.now(),
     finishedAt: null,
     notes: '',
-    exercises: t.exercises.map((e) => newSessionExercise(e.name, e.sets, e.reps)),
+    exercises: t.exercises.map((e) => newSessionExercise(e.name, e.sets, e.reps, e.rest)),
   };
   state.draft = sess;
   state.rest = null;
@@ -249,12 +285,12 @@ async function startSession(t) {
   go(sessionView(sess, { draft: true }));
 }
 
-function newSessionExercise(name, sets = 3, reps = '') {
+function newSessionExercise(name, sets = 3, reps = '', rest = null) {
   const n = Math.max(1, Number(sets) || 1);
   return {
     name: name.trim(),
     key: normName(name),
-    target: { sets: n, reps: reps || '' },
+    target: { sets: n, reps: reps || '', rest: rest || null },
     sets: Array.from({ length: n }, () => ({ w: null, r: null, done: false })),
   };
 }
@@ -276,19 +312,34 @@ function sessionView(sess, { draft }) {
       return !dirty || confirm('Descartar as alterações?');
     },
     render(root) {
-      const restPill = h('button', { class: 'rest-pill', hidden: true, onclick: () => { state.rest = null; tick(); } });
-      const tick = () => {
-        if (!state.rest) { restPill.hidden = true; return; }
-        restPill.hidden = false;
-        restPill.textContent = `Descanso ${fmtDuration(Date.now() - state.rest)}`;
+      // barra flutuante do descanso
+      const rLabel = h('span', { class: 'rest-label' });
+      const rTime = h('b', { class: 'rest-time' });
+      const rProg = h('i');
+      const adj = (d) => { const r = state.rest; if (r && !r.fired) { r.end += d * 1000; r.total = Math.max(r.total + d, 1); restTick(); } };
+      const restBar = h('div', { class: 'rest-bar', hidden: true },
+        h('div', { class: 'rest-prog' }, rProg),
+        h('div', { class: 'rest-row' },
+          h('div', { class: 'grow' }, rLabel, rTime),
+          h('button', { class: 'rest-btn', onclick: () => adj(-15) }, '−15'),
+          h('button', { class: 'rest-btn', onclick: () => adj(15) }, '+15'),
+          h('button', { class: 'rest-btn', 'aria-label': 'Pular descanso', onclick: () => { state.rest = null; restTick(); state.onRest?.(); } }, '✕')));
+      state.onRest = () => {
+        const r = state.rest;
+        document.body.classList.toggle('resting', !!r);
+        if (!r) { restBar.hidden = true; return; }
+        restBar.hidden = false;
+        const left = Math.max(0, (r.end - Date.now()) / 1000);
+        restBar.classList.toggle('done', r.fired);
+        rLabel.textContent = r.fired ? 'Descanso concluído' : `Descanso ${r.label}`;
+        rTime.textContent = r.fired ? 'Bora!' : fmtClock(left);
+        rProg.style.width = `${r.fired ? 100 : (1 - left / r.total) * 100}%`;
       };
-      view.startRest = () => { state.rest = Date.now(); tick(); };
-      tick();
-      ticker = setInterval(tick, 1000);
+      state.onRest();
 
       root.append(h('div', { class: 'sess-head' },
-        h('input', { class: 'input', type: 'date', value: sess.date, onchange: (e) => { sess.date = e.target.value || todayISO(); touch(); } }),
-        restPill));
+        h('input', { class: 'input', type: 'date', value: sess.date, onchange: (e) => { sess.date = e.target.value || todayISO(); touch(); } })));
+      root.append(restBar);
 
       listEl = h('div');
       root.append(listEl);
@@ -312,6 +363,13 @@ function sessionView(sess, { draft }) {
 
       root.append(h('button', { class: 'btn primary block', onclick: finish }, draft ? 'Finalizar treino' : 'Salvar alterações'));
       if (draft) root.append(h('button', { class: 'btn ghost danger block', onclick: discardDraft }, 'Descartar treino'));
+
+      root.append(h('div', { style: 'height:84px' })); // espaço para a barra de descanso
+      if (draft && state.settings.wake) {
+        keepAwake(true);
+        return () => keepAwake(false);
+      }
+      return undefined;
     },
   };
 
@@ -383,7 +441,12 @@ function sessionView(sess, { draft }) {
         if (st.r == null && rIn.value === '' && ph.r != null) st.r = ph.r;
         if (st.r == null) { toast('Informe as repetições'); rIn.focus(); return; }
         st.done = true;
-        view.startRest?.();
+        unlockAudio(); // o toque libera o som no iOS
+        const exDone = ex.sets.every((x) => x.done);
+        const allDone = sess.exercises.every((e) => e.sets.every((x) => x.done));
+        if (allDone) startRest(0);
+        else if (exDone) startRest(state.settings.restEx, 'entre exercícios');
+        else startRest(ex.target?.rest || state.settings.restSet, 'entre séries');
       } else {
         st.done = false;
       }
@@ -472,13 +535,16 @@ function templateEditor(tpl) {
       listEl.replaceChildren(h('div', { class: 'empty' }, 'Nenhum exercício ainda.'));
       return;
     }
-    listEl.replaceChildren(...t.exercises.map((e, i) => h('div', { class: 'card' },
+    listEl.replaceChildren(h('div', { class: 'tpl-ex tpl-ex-head' }, h('span', null, 'Exercício'), h('span', null, 'Séries'), h('span', null, 'Reps')),
+      ...t.exercises.map((e, i) => h('div', { class: 'card' },
       h('div', { class: 'tpl-ex' },
         h('input', { class: 'input ex-name', list: 'ex-names', value: e.name, placeholder: 'Exercício', oninput: (ev) => { e.name = ev.target.value; touch(); } }),
         h('input', { class: 'input', inputmode: 'numeric', pattern: '[0-9]*', value: String(e.sets ?? 3), style: 'text-align:center', 'aria-label': 'Séries', oninput: (ev) => { e.sets = parseInt(ev.target.value, 10) || 1; touch(); } }),
         h('input', { class: 'input', value: e.reps || '', placeholder: '8-12', style: 'text-align:center', 'aria-label': 'Repetições', oninput: (ev) => { e.reps = ev.target.value.trim(); touch(); } })),
       h('div', { class: 'tpl-ex-tools' },
-        h('span', { class: 'muted small grow' }, 'séries × reps'),
+        h('label', { class: 'rest-in grow' }, 'Descanso',
+          h('input', { class: 'num', inputmode: 'numeric', pattern: '[0-9]*', value: e.rest ? String(e.rest) : '', placeholder: String(state.settings.restSet), 'aria-label': 'Descanso entre séries (s)', oninput: (ev) => { e.rest = parseInt(ev.target.value, 10) || null; touch(); } }),
+          's'),
         h('button', { class: 'icon-btn', disabled: i === 0, 'aria-label': 'Subir', onclick: () => mv(i, -1) }, icon('up')),
         h('button', { class: 'icon-btn', disabled: i === t.exercises.length - 1, 'aria-label': 'Descer', onclick: () => mv(i, 1) }, icon('down')),
         h('button', { class: 'icon-btn danger', 'aria-label': 'Remover', onclick: () => { t.exercises.splice(i, 1); touch(); renderList(); } }, icon('x'))))));
@@ -714,6 +780,29 @@ function ajustesView() {
           h('div', { class: 'badge' }, t.short), h('div', { class: 'grow' }, h('div', { class: 'li-title' }, t.name), h('div', { class: 'li-sub' }, `${t.exercises.length} exercícios`)), icon('chev'))),
         h('button', { class: 'list-item', onclick: () => go(templateEditor(null)) }, h('div', { class: 'li-title', style: 'color:var(--accent)' }, '+ Novo treino'))));
 
+      // Descanso
+      const st = state.settings;
+      const stepper = (key, label) => {
+        const val = h('b', { class: 'step-val' }, fmtClock(st[key]));
+        const set = (v) => { st[key] = Math.max(0, Math.min(600, v)); val.textContent = fmtClock(st[key]); saveSettings(); };
+        return h('div', { class: 'set-item' }, h('span', null, label),
+          h('div', { class: 'row' },
+            h('button', { class: 'icon-btn', 'aria-label': 'Menos 15 s', onclick: () => set(st[key] - 15) }, '−'),
+            val,
+            h('button', { class: 'icon-btn', 'aria-label': 'Mais 15 s', onclick: () => set(st[key] + 15) }, '+')));
+      };
+      const toggle = (key, label) => h('label', { class: 'set-item' }, h('span', null, label),
+        h('input', { type: 'checkbox', class: 'switch', checked: st[key], onchange: (e) => { st[key] = e.target.checked; saveSettings(); } }));
+      root.append(h('div', { class: 'section' }, 'Descanso'));
+      root.append(h('div', { class: 'card' },
+        stepper('restSet', 'Entre séries'),
+        stepper('restEx', 'Entre exercícios'),
+        toggle('sound', 'Aviso sonoro'),
+        toggle('wake', 'Manter tela ligada no treino'),
+        h('div', { class: 'set-item' },
+          h('span', { class: 'muted small' }, 'Cada exercício pode ter seu próprio descanso entre séries (edite o treino).'),
+          h('button', { class: 'btn small', onclick: () => { unlockAudio(); beep(); } }, 'Testar som'))));
+
       // Backup
       const lb = state.lastBackup;
       const lbDays = lb ? Math.floor((Date.now() - lb) / 86400000) : null;
@@ -917,10 +1006,15 @@ async function importCSVFile(file) {
 function registerSW() {
   if (!('serviceWorker' in navigator)) return;
   const banner = document.getElementById('update-banner');
-  navigator.serviceWorker.register('./sw.js').then((reg) => {
+  navigator.serviceWorker.register('./sw.js', { updateViaCache: 'none' }).then((reg) => {
     const show = () => {
       banner.hidden = false;
-      document.getElementById('update-btn').onclick = () => reg.waiting?.postMessage('skipWaiting');
+      document.getElementById('update-btn').onclick = async () => {
+        document.getElementById('update-btn').textContent = 'Atualizando…';
+        if (state.draft) await db.put('kv', state.draft, 'draft');
+        reg.waiting?.postMessage('skipWaiting');
+        setTimeout(() => location.reload(), 2500); // garantia caso o iOS não dispare o controllerchange
+      };
     };
     if (reg.waiting && navigator.serviceWorker.controller) show();
     reg.addEventListener('updatefound', () => {

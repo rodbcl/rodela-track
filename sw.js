@@ -1,6 +1,6 @@
 // Rodela Track — Service Worker
 // IMPORTANTE: a cada atualização publicada, aumente VERSION para o iPhone baixar os arquivos novos.
-const VERSION = '0.3.0';
+const VERSION = '0.3.1';
 const CACHE = `rodela-${VERSION}`;
 const CDN_CACHE = 'rodela-cdn';
 
@@ -26,7 +26,9 @@ const ASSETS = [
 ];
 
 self.addEventListener('install', (e) => {
-  e.waitUntil(caches.open(CACHE).then((c) => c.addAll(ASSETS)));
+  // cache: 'reload' ignora o cache HTTP do navegador (o GitHub Pages guarda arquivos por ~10 min),
+  // garantindo que a versão nova seja baixada de verdade
+  e.waitUntil(caches.open(CACHE).then((c) => c.addAll(ASSETS.map((u) => new Request(u, { cache: 'reload' })))));
 });
 
 self.addEventListener('activate', (e) => {
