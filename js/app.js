@@ -5,10 +5,14 @@ import {
   WEEKDAYS, MONTHS, parseNum, fmtNum, uid, normName, clone, debounce, fmtDuration,
 } from './util.js';
 import { lineChart } from './chart.js';
-import { createDieta } from './dieta.js';
-import { unlockAudio, beep, keepAwake, fmtClock } from './rest.js';
+import * as dietaMod from './dieta.js';
+import * as restMod from './rest.js';
+const { unlockAudio, beep, keepAwake, fmtClock } = restMod;
+const { createDieta } = dietaMod;
+// importação por namespace: se um arquivo estiver desatualizado no cache, a versão vem undefined em vez de quebrar o app
+const moduleVersions = () => ({ dieta: dietaMod.DIETA_VERSION, descanso: restMod.REST_VERSION });
 
-const APP_VERSION = '0.3.1';
+const APP_VERSION = '0.3.2';
 const DEFAULT_SETTINGS = { restSet: 90, restEx: 120, sound: true, wake: true };
 
 const state = {
@@ -53,6 +57,7 @@ async function boot() {
   render();
   registerSW();
   setInterval(restTick, 250);
+  if (Object.values(moduleVersions()).some((v) => v !== APP_VERSION)) toast('Arquivos desatualizados: vá em Ajustes → Forçar atualização');
 }
 
 // ======================================================================
@@ -852,9 +857,32 @@ function ajustesView() {
         },
       }, 'Apagar todos os dados'));
 
-      root.append(h('p', { class: 'muted small center mt' }, `Rodela Track v${APP_VERSION}`));
+      const mv = moduleVersions();
+      const stale = Object.values(mv).some((v) => v !== APP_VERSION);
+      root.append(h('div', { class: 'section' }, 'Atualização'));
+      root.append(h('div', { class: 'card' },
+        stale ? h('p', { class: 'warn small', style: 'margin-top:0' }, 'Alguns arquivos do app estão desatualizados. Toque em "Forçar atualização".') : null,
+        h('p', { class: 'muted small', style: 'margin-top:0' }, 'Baixa todos os arquivos do app de novo. Seus dados (treinos, dieta, receitas) não são apagados.'),
+        h('button', { class: 'btn block', style: 'margin-top:0', onclick: forceUpdate }, 'Forçar atualização')));
+      root.append(h('p', { class: 'muted small center mt' }, `Rodela Track v${APP_VERSION}` + (stale ? ` (dieta v${mv.dieta || '?'}, descanso v${mv.descanso || '?'})` : '')));
     },
   };
+}
+
+async function forceUpdate() {
+  if (!navigator.onLine) { toast('Sem internet — conecte para atualizar'); return; }
+  toast('Atualizando…');
+  if (state.draft) await db.put('kv', state.draft, 'draft');
+  try {
+    const keys = await caches.keys();
+    await Promise.all(keys.filter((k) => k.startsWith('rodela-')).map((k) => caches.delete(k)));
+    // renova também o cache HTTP do navegador (o GitHub Pages guarda arquivos por ~10 min)
+    const files = ['./', './index.html', './css/style.css', './js/app.js', './js/db.js', './js/util.js', './js/chart.js', './js/dieta.js', './js/label.js', './js/rest.js', './sw.js'];
+    await Promise.all(files.map((f) => fetch(f, { cache: 'reload' }).catch(() => {})));
+    const regs = await navigator.serviceWorker?.getRegistrations?.() || [];
+    await Promise.all(regs.map((r) => r.unregister()));
+  } catch { /* */ }
+  location.replace(`./?v=${Date.now()}`);
 }
 
 function pickFile(accept, cb) {

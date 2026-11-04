@@ -3,6 +3,8 @@ import * as db from './db.js';
 import { h, toast, todayISO, toISO, parseISO, fmtDate, fmtShort, weekday, parseNum, fmtNum, uid, normName, clone } from './util.js';
 import { parseLabel } from './label.js';
 
+export const DIETA_VERSION = '0.3.2';
+
 export const MEALS = [
   { id: 'cafe', name: 'Café da manhã' },
   { id: 'almoco', name: 'Almoço' },

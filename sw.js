@@ -1,6 +1,6 @@
 // Rodela Track — Service Worker
 // IMPORTANTE: a cada atualização publicada, aumente VERSION para o iPhone baixar os arquivos novos.
-const VERSION = '0.3.1';
+const VERSION = '0.3.2';
 const CACHE = `rodela-${VERSION}`;
 const CDN_CACHE = 'rodela-cdn';
 
@@ -63,7 +63,7 @@ self.addEventListener('fetch', (e) => {
   if (url.origin !== self.location.origin) return; // ex.: Open Food Facts → sempre rede
 
   e.respondWith(
-    caches.match(req, { ignoreSearch: true }).then((hit) => {
+    caches.open(CACHE).then((c) => c.match(req, { ignoreSearch: true })).then((hit) => {
       if (hit) return hit;
       return fetch(req)
         .then((res) => {

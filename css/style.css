@@ -249,3 +249,32 @@ pre.code { display: block; padding: 10px; overflow-x: auto; white-space: pre; }
 .ocr-thumb { width: 100%; max-height: 180px; object-fit: contain; border-radius: 10px; background: var(--card-2); margin-bottom: 8px; }
 details summary { color: var(--accent); font-weight: 600; margin: 8px 0; }
 details textarea { margin-bottom: 8px; }
+
+/* ---------- Descanso ---------- */
+.rest-bar {
+  position: fixed; left: 12px; right: 12px; z-index: 30;
+  bottom: calc(var(--tabbar-h) + var(--sab) + 10px);
+  background: var(--text); color: var(--bg); border-radius: 16px; overflow: hidden;
+  box-shadow: 0 6px 24px rgba(0,0,0,.25); max-width: 616px; margin: 0 auto;
+}
+.rest-bar[hidden] { display: none; }
+.rest-bar.done { background: var(--ok); color: #fff; animation: rest-pulse .6s ease-in-out 3; }
+@keyframes rest-pulse { 50% { transform: scale(1.03); } }
+.rest-prog { height: 4px; background: rgba(127,127,127,.3); }
+.rest-prog i { display: block; height: 100%; background: var(--accent); transition: width .25s linear; }
+.rest-bar.done .rest-prog i { background: #fff; }
+.rest-row { display: flex; align-items: center; gap: 8px; padding: 10px 10px 10px 16px; }
+.rest-label { display: block; font-size: 12px; opacity: .75; font-weight: 600; }
+.rest-time { font-size: 26px; font-variant-numeric: tabular-nums; letter-spacing: -0.01em; }
+.rest-btn { border: 0; background: rgba(127,127,127,.25); color: inherit; border-radius: 10px; min-width: 48px; height: 42px; font-weight: 700; font-size: 15px; }
+.rest-btn:active { opacity: .6; }
+.rest-in { display: flex; align-items: center; gap: 6px; font-size: 13px; color: var(--muted); font-weight: 600; }
+.rest-in .num { width: 64px; padding: 7px 4px; }
+.tpl-ex-head { font-size: 12px; color: var(--muted); font-weight: 600; padding: 0 4px 6px; }
+.step-val { min-width: 48px; text-align: center; font-variant-numeric: tabular-nums; }
+.switch { appearance: none; -webkit-appearance: none; width: 50px; height: 30px; border-radius: 99px; background: var(--line); position: relative; transition: .2s; flex: none; margin: 0; }
+.switch::after { content: ''; position: absolute; top: 2px; left: 2px; width: 26px; height: 26px; border-radius: 50%; background: #fff; box-shadow: 0 1px 3px rgba(0,0,0,.3); transition: .2s; }
+.switch:checked { background: var(--ok); }
+.switch:checked::after { left: 22px; }
+.add-plus { flex: none; width: 32px; height: 32px; border-radius: 50%; background: var(--accent); color: var(--accent-ink); display: inline-flex; align-items: center; justify-content: center; font-size: 22px; font-weight: 700; line-height: 1; }
+body.resting #toast { bottom: calc(var(--tabbar-h) + var(--sab) + 112px); }
