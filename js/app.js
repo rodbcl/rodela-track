@@ -16,7 +16,7 @@ const moduleVersions = () => ({ dieta: dietaMod.DIETA_VERSION, descanso: restMod
 const isBoxe = (t) => t?.kind === 'boxe';
 const editorFor = (t) => (isBoxe(t) ? boxe.boxeEditor(t) : templateEditor(t));
 
-const APP_VERSION = '0.5.0';
+const APP_VERSION = '0.5.1';
 const DEFAULT_SETTINGS = { restSet: 90, restEx: 120, sound: true, wake: true };
 
 const state = {

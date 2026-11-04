@@ -45,7 +45,8 @@ Veja [GUIA-GITHUB-PAGES.md](GUIA-GITHUB-PAGES.md).
 - **0.3.2**: botão "Forçar atualização" em Ajustes e aviso quando algum arquivo do app ficar desatualizado no cache.
 - **0.4.0**: treino de boxe (rounds iguais ou personalizados, descanso, aviso X s antes do fim, gongo, preparação, cores verde/amarelo/vermelho), aviso de recorde de carga, resumo semanal da dieta e calculadora de TMB/gasto diário.
 - **0.4.1**: organizar a ordem dos treinos (↑ ↓), boxe entra na rotação e opção "Marcar como próximo".
-- **0.5.0**: gerador de combos de boxe com progressão por etapas (rounds escolhidos), favoritos, trocar/favoritar combo no timer, histórico de combos; ícone novo.
+- **0.5.0**: gerador de combos de boxe com progressão por etapas (rounds escolhidos), favoritos, trocar/favoritar combo no timer, histórico de combos.
+- **0.5.1**: volta o ícone da anilha laranja.
 
 ## Testar no iPhone pela rede local
 

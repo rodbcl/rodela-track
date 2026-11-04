@@ -1,6 +1,6 @@
 // Rodela Track — Service Worker
 // IMPORTANTE: a cada atualização publicada, aumente VERSION para o iPhone baixar os arquivos novos.
-const VERSION = '0.5.0';
+const VERSION = '0.5.1';
 const CACHE = `rodela-${VERSION}`;
 const CDN_CACHE = 'rodela-cdn';
 
