@@ -1,6 +1,6 @@
 // Rodela Track — Service Worker
 // IMPORTANTE: a cada atualização publicada, aumente VERSION para o iPhone baixar os arquivos novos.
-const VERSION = '0.2.0';
+const VERSION = '0.3.0';
 const CACHE = `rodela-${VERSION}`;
 const CDN_CACHE = 'rodela-cdn';
 
@@ -15,6 +15,7 @@ const ASSETS = [
   './js/chart.js',
   './js/dieta.js',
   './js/label.js',
+  './js/rest.js',
   './js/vendor/zxing.min.js',
   './js/vendor/tesseract.min.js',
   './js/vendor/worker.min.js',

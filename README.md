@@ -14,6 +14,7 @@ js/db.js              IndexedDB
 js/util.js            utilitários
 js/chart.js           gráfico SVG
 js/dieta.js           módulo Dieta
+js/rest.js            timer de descanso (contagem, bipe, tela ligada)
 js/label.js           interpretador de tabela nutricional (RDC 429 e formato antigo)
 js/vendor/            ZXing (código de barras) e Tesseract.js + idioma português (OCR)
 data/taco.json        Tabela TACO (Unicamp) — 597 alimentos
@@ -36,6 +37,8 @@ Veja [GUIA-GITHUB-PAGES.md](GUIA-GITHUB-PAGES.md).
 
 - **0.1.0**: base PWA + módulo Treino (modelos A/B/C, sessão com última carga, timer de descanso, histórico, calendário, gráficos de progresso, backup JSON, importação de CSV).
 - **0.2.0**: módulo Dieta — base TACO, Meus alimentos, receitas (com peso final do prato), 4 refeições, clonar refeição/dia, repetir de ontem, meta de kcal com divisão 40/30/30 (editável), código de barras (Open Food Facts), foto da tabela (OCR offline) e colar texto (Texto ao Vivo).
+
+- **0.3.0**: timer de descanso com contagem regressiva e aviso sonoro (entre séries / entre exercícios / por exercício, ajustável ±15 s), tela ligada durante o treino; receitas entram inteiras na refeição com um toque (½, 1, 1,5, 2 receitas ao editar).
 
 ## Testar no iPhone pela rede local
 
