@@ -59,7 +59,9 @@ svg { fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; 
 .top-back svg { width: 28px; height: 28px; stroke-width: 2.4; }
 .top-back[hidden] { display: none; }
 body.sub #title { font-size: 20px; }
-#top-actions { display: flex; gap: 8px; }
+#top-actions { display: flex; gap: 8px; grid-column: 3; }
+#title { grid-column: 2; }
+.top-back { grid-column: 1; }
 .top-btn { border: 0; background: var(--card-2); padding: 7px 14px; border-radius: 999px; font-weight: 600; font-size: 15px; }
 .top-btn.primary { background: var(--accent); color: var(--accent-ink); }
 

@@ -3,7 +3,7 @@ import * as db from './db.js';
 import { h, toast, todayISO, uid, clone, fmtNum } from './util.js';
 import { unlockAudio, keepAwake, fmtClock, bell, gong, warnClap } from './rest.js';
 
-export const BOXE_VERSION = '0.4.0';
+export const BOXE_VERSION = '0.4.1';
 
 export const DEFAULT_BOX = { rounds: 6, mode: 'same', roundSec: 180, custom: [], restSec: 60, warnSec: 10, prepSec: 10 };
 

@@ -1,5 +1,5 @@
 // Timer de descanso: contagem regressiva, aviso sonoro e tela ligada durante o treino
-export const REST_VERSION = '0.4.0';
+export const REST_VERSION = '0.4.1';
 let audio = null;
 
 /** Precisa ser chamado dentro de um toque do usuário (exigência do iOS para liberar o som). */

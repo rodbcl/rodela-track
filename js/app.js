@@ -15,7 +15,7 @@ const moduleVersions = () => ({ dieta: dietaMod.DIETA_VERSION, descanso: restMod
 const isBoxe = (t) => t?.kind === 'boxe';
 const editorFor = (t) => (isBoxe(t) ? boxe.boxeEditor(t) : templateEditor(t));
 
-const APP_VERSION = '0.4.0';
+const APP_VERSION = '0.4.1';
 const DEFAULT_SETTINGS = { restSet: 90, restEx: 120, sound: true, wake: true };
 
 const state = {
@@ -99,6 +99,7 @@ async function loadAll() {
   state.sessions = sortSessions(await db.getAll('sessions'));
   state.draft = (await db.get('kv', 'draft')) || null;
   state.lastBackup = (await db.get('kv', 'lastBackup')) || null;
+  state.nextOverride = (await db.get('kv', 'nextTpl')) || null;
   state.settings = { ...DEFAULT_SETTINGS, ...((await db.get('kv', 'settings')) || {}) };
   await dieta.load();
 }
@@ -192,9 +193,15 @@ function lastPerf(key, excludeId) {
 }
 
 function nextTemplateId() {
-  const t = state.templates.filter((x) => !isBoxe(x)); // boxe fica fora da rotação A → B → C
+  const t = state.templates; // a rotação segue a ordem da lista (inclui boxe)
   if (!t.length) return null;
-  const last = state.sessions.find((s) => s.templateId && s.kind !== 'boxe' && t.some((x) => x.id === s.templateId));
+  // "Marcar como próximo" vale até o próximo treino finalizado
+  const ov = state.nextOverride;
+  if (ov && t.some((x) => x.id === ov.id)) {
+    const lastDone = Math.max(0, ...state.sessions.map((s) => s.finishedAt || 0));
+    if (lastDone < ov.setAt) return ov.id;
+  }
+  const last = state.sessions.find((s) => s.templateId && t.some((x) => x.id === s.templateId));
   if (!last) return t[0].id;
   const i = t.findIndex((x) => x.id === last.templateId);
   return t[(i + 1) % t.length].id;
@@ -230,10 +237,50 @@ const isStandalone = () => window.navigator.standalone === true || matchMedia('(
 // ======================================================================
 // Aba Treino
 // ======================================================================
+async function moveTemplate(i, d) {
+  const t = state.templates;
+  const j = i + d;
+  if (j < 0 || j >= t.length) return;
+  [t[i], t[j]] = [t[j], t[i]];
+  t.forEach((x, k) => { x.order = k; });
+  await db.putMany('templates', t);
+  rerender();
+}
+
+async function setNext(id) {
+  state.nextOverride = { id, setAt: Date.now() };
+  await db.put('kv', state.nextOverride, 'nextTpl');
+  toast('Próximo treino definido');
+  rerender();
+}
+
 function treinoHome() {
   return {
     title: 'Treino',
+    get actions() {
+      if (state.templates.length < 2) return [];
+      return [{ label: state.organizing ? 'Concluir' : 'Organizar', primary: !!state.organizing, onclick: () => { state.organizing = !state.organizing; render(); } }];
+    },
     render(root) {
+      if (state.organizing) {
+        const next = nextTemplateId();
+        root.append(h('p', { class: 'muted small', style: 'margin:4px 4px 12px' },
+          'Use as setas para mudar a ordem. O próximo treino segue essa ordem, mas você pode escolher um manualmente.'));
+        state.templates.forEach((t, i) => {
+          root.append(h('div', { class: 'card tpl' + (t.id === next ? ' next' : '') },
+            h('div', { class: 'tpl-head' },
+              h('div', { class: 'badge big' }, t.short || t.name.slice(0, 1)),
+              h('div', { class: 'grow' },
+                h('div', { class: 'card-title' }, t.name, t.id === next ? h('span', { class: 'pill' }, 'próximo') : null),
+                h('div', { class: 'muted small' }, `${i + 1}º na sequência`)),
+              h('button', { class: 'icon-btn', disabled: i === 0, 'aria-label': 'Subir', onclick: () => moveTemplate(i, -1) }, icon('up')),
+              h('button', { class: 'icon-btn', disabled: i === state.templates.length - 1, 'aria-label': 'Descer', onclick: () => moveTemplate(i, 1) }, icon('down'))),
+            t.id === next ? null : h('button', { class: 'btn small ghost block', style: 'margin-top:8px', onclick: () => setNext(t.id) }, 'Marcar como próximo')));
+        });
+        root.append(h('div', { class: 'muted small center mt' },
+          `Sequência: ${state.templates.map((t) => t.short || t.name).join(' → ')} → …`));
+        return;
+      }
       if (!isStandalone()) {
         root.append(h('div', { class: 'card small' },
           h('b', null, 'Instale no iPhone: '),
@@ -515,7 +562,7 @@ function sessionView(sess, { draft }) {
       state.draft = null;
       state.rest = null;
       requestPersist();
-      toast(`Treino salvo · ${countSets(out)} séries`);
+      toast(`Treino salvo · ${countSets(out)} ${countSets(out) === 1 ? 'série' : 'séries'}`);
       state.tab = 'treino';
       state.stack = [];
     } else {
