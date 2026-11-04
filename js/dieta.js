@@ -80,8 +80,30 @@ export function createDieta(ctx) {
     else { D.days.set(day.date, day); await db.put('days', day); }
   }
 
-  const recipeAsFood = (r) => ({ id: r.id, name: r.name, src: 'recipe', n: recipeTotals(r).per100 });
-  const foodToItem = (food, grams) => ({ id: uid(), name: food.name, brand: food.brand || '', src: food.src, ref: food.id, grams, n: { ...food.n } });
+  const recipeAsFood = (r) => { const t = recipeTotals(r); return { id: r.id, name: r.name, src: 'recipe', n: t.per100, recipeWeight: t.weight }; };
+  const foodToItem = (food, grams) => ({
+    id: uid(), name: food.name, brand: food.brand || '', src: food.src, ref: food.id, grams, n: { ...food.n },
+    ...(food.recipeWeight ? { recipeWeight: food.recipeWeight } : {}),
+  });
+  /** "1 receita", "½ receita", "1,5 receita" */
+  function recipeQty(grams, weight) {
+    const q = grams / weight;
+    if (Math.abs(q - 0.5) < 0.01) return '½ receita';
+    const t = fmtNum(q, 2);
+    return `${t} ${q > 1.0001 ? 'receitas' : 'receita'}`;
+  }
+
+  /** Receita entra inteira (pesos dos ingredientes), sem perguntar quantidade. */
+  async function addRecipeDirect(recipeId, target) {
+    const r = D.recipes.find((x) => x.id === recipeId);
+    if (!r) { toast('Receita não encontrada'); return; }
+    const food = recipeAsFood(r);
+    const day = getDay(target.date);
+    day.meals[target.meal].push(foodToItem(food, food.recipeWeight));
+    await saveDay(day);
+    toast(`${r.name} adicionada · ${kcalTxt(recipeTotals(r).tot.kcal)}`);
+    popUntil(() => false);
+  }
 
   function lastGramsFor(ref) {
     const dates = [...D.days.keys()].sort().reverse();
@@ -99,7 +121,8 @@ export function createDieta(ctx) {
       const k = it.ref || normName(it.name);
       if (seen.has(k)) continue;
       seen.add(k);
-      out.push({ id: it.ref || it.id, name: it.name, brand: it.brand, src: it.src, n: it.n });
+      if (it.src === 'recipe' && !D.recipes.some((r) => r.id === it.ref)) continue; // receita excluída
+      out.push({ id: it.ref || it.id, name: it.name, brand: it.brand, src: it.src, n: it.n, recipeWeight: it.recipeWeight });
       if (out.length >= limit) return out;
     }
     return out;
@@ -212,8 +235,9 @@ export function createDieta(ctx) {
 
     for (const it of items) {
       const k = calc(it.n, it.grams);
-      card.append(h('button', { class: 'food-row', onclick: () => go(qtyView({ food: { id: it.ref, name: it.name, brand: it.brand, src: it.src, n: it.n }, grams: it.grams, edit: { day, meal: m.id, item: it } })) },
-        h('div', { class: 'grow' }, h('div', { class: 'li-title' }, it.name), h('div', { class: 'li-sub' }, `${fmtNum(it.grams)} g · ${macroLine(k)}`)),
+      const qty = it.recipeWeight ? `${recipeQty(it.grams, it.recipeWeight)} · ${fmtNum(it.grams, 0)} g` : `${fmtNum(it.grams)} g`;
+      card.append(h('button', { class: 'food-row', onclick: () => go(qtyView({ food: { id: it.ref, name: it.name, brand: it.brand, src: it.src, n: it.n, recipeWeight: it.recipeWeight }, grams: it.grams, edit: { day, meal: m.id, item: it } })) },
+        h('div', { class: 'grow' }, h('div', { class: 'li-title' }, it.name), h('div', { class: 'li-sub' }, `${qty} · ${macroLine(k)}`)),
         h('b', { class: 'small' }, fmtNum(k.kcal, 0))));
     }
 
@@ -300,11 +324,19 @@ export function createDieta(ctx) {
     function quickBtn(label, onclick) { return h('button', { class: 'quick-btn', onclick }, label); }
 
     function foodList(list) {
-      return h('div', { class: 'list' }, list.map((f) => h('button', { class: 'list-item', onclick: () => go(qtyView({ food: f, target })) },
+      return h('div', { class: 'list' }, list.map((f) => {
+        const isRecipe = f.src === 'recipe' && !target.pick;
+        const r = isRecipe ? D.recipes.find((x) => x.id === f.id) : null;
+        const sub = r
+          ? `Receita inteira · ${fmtNum(recipeTotals(r).weight, 0)} g · ${kcalTxt(recipeTotals(r).tot.kcal)} · ${macroLine(recipeTotals(r).tot)}`
+          : `${SRC_LABEL[f.src] || ''} · 100 g: ${kcalTxt(f.n.kcal)} · ${macroLine(f.n)}`;
+        return h('button', { class: 'list-item', onclick: () => (isRecipe ? addRecipeDirect(f.id, target) : go(qtyView({ food: f, target }))) },
         h('div', { class: 'grow' },
           h('div', { class: 'li-title' }, f.name, f.brand ? h('span', { class: 'muted' }, ` · ${f.brand}`) : null),
-          h('div', { class: 'li-sub' }, `${SRC_LABEL[f.src] || ''} · 100 g: ${kcalTxt(f.n.kcal)} · ${macroLine(f.n)}`)),
-        icon('chev'))));
+          h('div', { class: 'li-sub' }, sub)),
+          isRecipe ? h('span', { class: 'add-plus', 'aria-hidden': 'true' }, '+') : null,
+        isRecipe ? null : icon('chev'));
+      }));
     }
     return v;
   }
@@ -338,7 +370,9 @@ export function createDieta(ctx) {
 
         root.append(h('div', { class: 'card' },
           h('label', { class: 'field' }, h('span', null, 'Quantidade (g)'), gIn),
-          h('div', { class: 'chips' }, food.portion ? chip(food.portion, `1 porção (${fmtNum(food.portion)} g)`) : null, [50, 100, 150, 200, 300].map((x) => chip(x))),
+          h('div', { class: 'chips' }, food.recipeWeight
+            ? [[0.5, '½ receita'], [1, '1 receita'], [1.5, '1,5 receita'], [2, '2 receitas']].map(([q, l]) => chip(Math.round(food.recipeWeight * q), l))
+            : [food.portion ? chip(food.portion, `1 porção (${fmtNum(food.portion)} g)`) : null, [50, 100, 150, 200, 300].map((x) => chip(x))]),
           prev));
         upd();
 
