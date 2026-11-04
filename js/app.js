@@ -8,14 +8,15 @@ import { lineChart } from './chart.js';
 import * as dietaMod from './dieta.js';
 import * as restMod from './rest.js';
 import * as boxeMod from './boxe.js';
+import * as combosMod from './combos.js';
 const { unlockAudio, beep, keepAwake, fmtClock, prBeep } = restMod;
 const { createDieta } = dietaMod;
 // importação por namespace: se um arquivo estiver desatualizado no cache, a versão vem undefined em vez de quebrar o app
-const moduleVersions = () => ({ dieta: dietaMod.DIETA_VERSION, descanso: restMod.REST_VERSION, boxe: boxeMod.BOXE_VERSION });
+const moduleVersions = () => ({ dieta: dietaMod.DIETA_VERSION, descanso: restMod.REST_VERSION, boxe: boxeMod.BOXE_VERSION, combos: combosMod.COMBOS_VERSION });
 const isBoxe = (t) => t?.kind === 'boxe';
 const editorFor = (t) => (isBoxe(t) ? boxe.boxeEditor(t) : templateEditor(t));
 
-const APP_VERSION = '0.4.1';
+const APP_VERSION = '0.5.0';
 const DEFAULT_SETTINGS = { restSet: 90, restEx: 120, sound: true, wake: true };
 
 const state = {
@@ -102,6 +103,7 @@ async function loadAll() {
   state.nextOverride = (await db.get('kv', 'nextTpl')) || null;
   state.settings = { ...DEFAULT_SETTINGS, ...((await db.get('kv', 'settings')) || {}) };
   await dieta.load();
+  await boxe.load();
 }
 
 function sortSessions(arr) {
@@ -975,7 +977,7 @@ async function forceUpdate() {
     const keys = await caches.keys();
     await Promise.all(keys.filter((k) => k.startsWith('rodela-')).map((k) => caches.delete(k)));
     // renova também o cache HTTP do navegador (o GitHub Pages guarda arquivos por ~10 min)
-    const files = ['./', './index.html', './css/style.css', './js/app.js', './js/db.js', './js/util.js', './js/chart.js', './js/dieta.js', './js/label.js', './js/rest.js', './js/boxe.js', './sw.js'];
+    const files = ['./', './index.html', './css/style.css', './js/app.js', './js/db.js', './js/util.js', './js/chart.js', './js/dieta.js', './js/label.js', './js/rest.js', './js/boxe.js', './js/combos.js', './sw.js'];
     await Promise.all(files.map((f) => fetch(f, { cache: 'reload' }).catch(() => {})));
     const regs = await navigator.serviceWorker?.getRegistrations?.() || [];
     await Promise.all(regs.map((r) => r.unregister()));
@@ -991,7 +993,7 @@ function pickFile(accept, cb) {
 }
 
 function buildBackup() {
-  return { app: 'rodela-track', schema: 2, version: APP_VERSION, exportedAt: new Date().toISOString(), templates: state.templates, sessions: state.sessions, ...dieta.backupData() };
+  return { app: 'rodela-track', schema: 2, version: APP_VERSION, exportedAt: new Date().toISOString(), templates: state.templates, sessions: state.sessions, ...dieta.backupData(), comboFavs: state.comboFavs };
 }
 
 async function markBackup() {
@@ -1034,6 +1036,7 @@ async function importBackup(file) {
   if (!confirm(`Restaurar backup de ${when}?\n${data.sessions.length} treinos, ${data.templates?.length || 0} modelos${diet}.\n\nIsso SUBSTITUI os dados atuais.`)) return;
   await db.replaceAll({ templates: data.templates || [], sessions: data.sessions, foods: data.foods, recipes: data.recipes, days: data.days });
   await dieta.restore(data);
+  if (Array.isArray(data.comboFavs)) await db.put('kv', data.comboFavs, 'comboFavs');
   await loadAll();
   toast('Backup restaurado');
   render();

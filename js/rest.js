@@ -1,5 +1,5 @@
 // Timer de descanso: contagem regressiva, aviso sonoro e tela ligada durante o treino
-export const REST_VERSION = '0.4.1';
+export const REST_VERSION = '0.5.0';
 let audio = null;
 
 /** Precisa ser chamado dentro de um toque do usuário (exigência do iOS para liberar o som). */
@@ -104,4 +104,12 @@ export function warnClap() {
   if (!ready()) return;
   const t = audio.currentTime + 0.05;
   for (let i = 0; i < 3; i++) tone(1500, t + i * 0.18, 0.06, { type: 'square', gain: 0.25 });
+}
+
+/** Dois bipes agudos curtos: o combo mudou. */
+export function comboBeep() {
+  if (!ready()) return;
+  const t = audio.currentTime + 0.05;
+  tone(1320, t, 0.09, { gain: 0.35 });
+  tone(1760, t + 0.12, 0.12, { gain: 0.35 });
 }
