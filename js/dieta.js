@@ -3,7 +3,7 @@ import * as db from './db.js';
 import { h, toast, todayISO, toISO, parseISO, fmtDate, fmtShort, weekday, parseNum, fmtNum, uid, normName, clone } from './util.js';
 import { parseLabel } from './label.js';
 
-export const DIETA_VERSION = '0.3.2';
+export const DIETA_VERSION = '0.4.0';
 
 export const MEALS = [
   { id: 'cafe', name: 'Café da manhã' },
@@ -59,6 +59,7 @@ export function createDieta(ctx) {
     D.recipes = await db.getAll('recipes');
     D.days = new Map((await db.getAll('days')).map((d) => [d.date, d]));
     D.goal = { ...DEFAULT_GOAL, ...((await db.get('kv', 'dietGoal')) || {}) };
+    D.tmb = (await db.get('kv', 'tmbInputs')) || null;
   }
 
   async function loadTaco() {
@@ -192,7 +193,9 @@ export function createDieta(ctx) {
         root.append(h('div', { class: 'list' },
           h('button', { class: 'list-item', onclick: () => go(recipesView()) }, h('div', { class: 'grow li-title' }, 'Receitas'), h('span', { class: 'muted small' }, D.recipes.length), icon('chev')),
           h('button', { class: 'list-item', onclick: () => go(myFoodsView()) }, h('div', { class: 'grow li-title' }, 'Meus alimentos'), h('span', { class: 'muted small' }, D.foods.length), icon('chev')),
-          h('button', { class: 'list-item', onclick: () => go(goalView()) }, h('div', { class: 'grow li-title' }, 'Meta diária'), h('span', { class: 'muted small' }, kcalTxt(D.goal.kcal)), icon('chev'))));
+          h('button', { class: 'list-item', onclick: () => go(goalView()) }, h('div', { class: 'grow li-title' }, 'Meta diária'), h('span', { class: 'muted small' }, kcalTxt(D.goal.kcal)), icon('chev')),
+          h('button', { class: 'list-item', onclick: () => go(weekView(D.day)) }, h('div', { class: 'grow li-title' }, 'Resumo da semana'), icon('chev')),
+          h('button', { class: 'list-item', onclick: () => go(tmbView()) }, h('div', { class: 'grow li-title' }, 'Calcular gasto (TMB)'), icon('chev'))));
       },
     };
   }
@@ -867,7 +870,8 @@ export function createDieta(ctx) {
             h('input', { class: 'input qty-input', inputmode: 'numeric', pattern: '[0-9]*', value: String(g.kcal), oninput: (e) => { g.kcal = parseNum(e.target.value) || 0; upd(); } })),
           h('div', { class: 'grid3' }, pctIn('pc', 'Carbo %'), pctIn('pp', 'Proteína %'), pctIn('pf', 'Gordura %')),
           prev,
-          h('p', { class: 'muted small' }, 'Conversão: carboidrato e proteína 4 kcal/g, gordura 9 kcal/g.')));
+          h('p', { class: 'muted small' }, 'Conversão: carboidrato e proteína 4 kcal/g, gordura 9 kcal/g.'),
+          h('button', { class: 'btn small block', onclick: () => go(tmbView()) }, 'Calcular meta pela TMB')));
         upd();
         root.append(h('button', { class: 'btn ghost block', onclick: () => { Object.assign(g, { pc: 40, pp: 30, pf: 30 }); rerender(); } }, 'Voltar para 40/30/30'));
       },
@@ -883,11 +887,175 @@ export function createDieta(ctx) {
   }
 
   // ======================================================================
+  // Resumo semanal
+  // ======================================================================
+  const WD = ['dom', 'seg', 'ter', 'qua', 'qui', 'sex', 'sáb'];
+  function mondayOf(iso) { const d = parseISO(iso); const k = (d.getDay() + 6) % 7; d.setDate(d.getDate() - k); return toISO(d); }
+  function addDays(iso, n) { const d = parseISO(iso); d.setDate(d.getDate() + n); return toISO(d); }
+  function dayTotals(date) {
+    const d = D.days.get(date);
+    if (!d) return null;
+    const items = MEALS.flatMap((m) => d.meals[m.id] || []);
+    return items.length ? sumItems(items) : null;
+  }
+
+  function weekView(refDate) {
+    let start = mondayOf(refDate || todayISO());
+    return {
+      title: 'Resumo da semana',
+      render(root) {
+        const days = Array.from({ length: 7 }, (_, i) => addDays(start, i));
+        const end = days[6];
+        const goal = goalGrams(D.goal);
+        const tots = days.map((d) => ({ date: d, t: dayTotals(d) }));
+        const logged = tots.filter((x) => x.t);
+        const avg = logged.length ? logged.reduce((a, x) => add(a, x.t), { ...ZERO }) : null;
+        if (avg) for (const k of ['kcal', 'c', 'p', 'f']) avg[k] /= logged.length;
+        const within = logged.filter((x) => Math.abs(x.t.kcal - goal.kcal) <= goal.kcal * 0.1).length;
+        const shift = (n) => { start = addDays(start, 7 * n); render(); };
+        const isCurrent = start === mondayOf(todayISO());
+
+        root.append(h('div', { class: 'day-nav' },
+          h('button', { class: 'icon-btn', 'aria-label': 'Semana anterior', onclick: () => shift(-1) }, icon('left')),
+          h('div', { class: 'day-label' }, h('b', null, isCurrent ? 'Esta semana' : `${fmtShort(start)} – ${fmtShort(end)}`), h('span', null, `${fmtDate(start)} a ${fmtDate(end)}`)),
+          h('button', { class: 'icon-btn', 'aria-label': 'Próxima semana', onclick: () => shift(1) }, icon('chev'))));
+
+        if (!logged.length) {
+          root.append(h('div', { class: 'empty' }, h('b', null, 'Sem registros nesta semana'), 'Os dias com refeições registradas aparecem aqui.'));
+          return;
+        }
+
+        root.append(h('div', { class: 'stats' },
+          h('div', { class: 'stat' }, h('b', null, `${within}/${logged.length}`), h('span', null, 'dias na meta (±10%)')),
+          h('div', { class: 'stat' }, h('b', null, `${logged.length}/7`), h('span', null, 'dias registrados'))));
+
+        root.append(h('div', { class: 'card mt' },
+          h('div', { class: 'muted small' }, 'Média diária (dias registrados)'),
+          h('div', { class: 'row between', style: 'margin-top:2px' },
+            h('div', { class: 'kcal-big' }, fmtNum(avg.kcal, 0), h('small', null, ` / ${fmtNum(goal.kcal, 0)} kcal`)),
+            h('div', { class: 'small ' + (Math.abs(avg.kcal - goal.kcal) <= goal.kcal * 0.1 ? 'muted' : 'warn') }, `${avg.kcal >= goal.kcal ? '+' : ''}${fmtNum(avg.kcal - goal.kcal, 0)}`)),
+          bar(avg.kcal, goal.kcal, 'kcal'),
+          h('div', { class: 'macros' }, macroBox('Carbo', avg.c, goal.c, 'c'), macroBox('Proteína', avg.p, goal.p, 'p'), macroBox('Gordura', avg.f, goal.f, 'f'))));
+
+        root.append(h('div', { class: 'card' }, h('div', { class: 'muted small', style: 'margin-bottom:6px' }, 'Calorias por dia'), weekChart(tots, goal.kcal),
+          h('div', { class: 'wk-legend' },
+            h('span', null, h('i', { class: 'lg ok' }), 'na meta'), h('span', null, h('i', { class: 'lg under' }), 'abaixo'), h('span', null, h('i', { class: 'lg over' }), 'acima'), h('span', null, h('i', { class: 'lg goal' }), 'meta'))));
+
+        root.append(h('div', { class: 'list' }, tots.map(({ date, t }) => h('button', {
+          class: 'list-item', onclick: () => { D.day = date; state.stack = []; render(); },
+        },
+        h('div', { class: 'grow' }, h('div', { class: 'li-title' }, `${WD[parseISO(date).getDay()]} · ${fmtShort(date)}`),
+          h('div', { class: 'li-sub' }, t ? macroLine(t) : 'sem registro')),
+        h('b', { class: 'small' }, t ? kcalTxt(t.kcal) : '–'), icon('chev')))));
+      },
+    };
+  }
+
+  function weekChart(tots, goalK) {
+    const W = 340, H = 170, pl = 8, pr = 8, pt = 12, pb = 24;
+    const max = Math.max(goalK * 1.25, ...tots.map((x) => x.t?.kcal || 0));
+    const bw = (W - pl - pr) / 7;
+    const y = (v) => pt + (H - pt - pb) * (1 - v / max);
+    let svg = '';
+    tots.forEach(({ date, t }, i) => {
+      const x = pl + i * bw + bw * 0.18, w = bw * 0.64;
+      if (t) {
+        const cls = Math.abs(t.kcal - goalK) <= goalK * 0.1 ? 'ok' : t.kcal < goalK ? 'under' : 'over';
+        svg += `<rect class="wb ${cls}" x="${x.toFixed(1)}" y="${y(t.kcal).toFixed(1)}" width="${w.toFixed(1)}" height="${(H - pb - y(t.kcal)).toFixed(1)}" rx="5"/>`;
+      } else {
+        svg += `<rect class="wb none" x="${x.toFixed(1)}" y="${(H - pb - 3).toFixed(1)}" width="${w.toFixed(1)}" height="3" rx="1.5"/>`;
+      }
+      svg += `<text class="lbl" x="${(x + w / 2).toFixed(1)}" y="${H - 7}" text-anchor="middle">${WD[parseISO(date).getDay()].slice(0, 3)}</text>`;
+    });
+    const gy = y(goalK).toFixed(1);
+    svg += `<line class="wgoal" x1="${pl}" x2="${W - pr}" y1="${gy}" y2="${gy}"/>`;
+    return h('div', { class: 'chart', html: `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Calorias por dia da semana">${svg}</svg>` });
+  }
+
+  // ======================================================================
+  // TMB e gasto diário
+  // ======================================================================
+  const ACTIVITY = [
+    { f: 1.2, name: 'Sedentário', desc: 'pouco ou nenhum exercício' },
+    { f: 1.375, name: 'Levemente ativo', desc: 'exercício 1–3×/semana' },
+    { f: 1.55, name: 'Moderadamente ativo', desc: 'exercício 3–5×/semana' },
+    { f: 1.725, name: 'Muito ativo', desc: 'exercício intenso 6–7×/semana' },
+    { f: 1.9, name: 'Extremamente ativo', desc: 'treino 2×/dia ou trabalho físico pesado' },
+  ];
+  const GOALS = [
+    { d: -500, name: 'Perder peso', desc: '≈ −0,5 kg/semana' },
+    { d: -250, name: 'Perder devagar', desc: '≈ −0,25 kg/semana' },
+    { d: 0, name: 'Manter', desc: '' },
+    { d: 250, name: 'Ganhar devagar', desc: '≈ +0,25 kg/semana' },
+    { d: 500, name: 'Ganhar peso', desc: '≈ +0,5 kg/semana' },
+  ];
+
+  function tmbView() {
+    const inp = { sex: 'm', age: null, weight: null, height: null, bf: null, act: 2, goal: 2, ...(D.tmb || {}) };
+    return {
+      title: 'Gasto calórico',
+      render(root) {
+        const out = h('div');
+        const save = () => { D.tmb = { ...inp }; db.put('kv', D.tmb, 'tmbInputs'); };
+        const num = (key, label, ph) => h('label', { class: 'field' }, h('span', null, label),
+          h('input', { class: 'input', inputmode: 'decimal', value: inp[key] != null ? fmtNum(inp[key]) : '', placeholder: ph, oninput: (e) => { inp[key] = parseNum(e.target.value); save(); calcDraw(); } }));
+        const seg = h('div', { class: 'seg' });
+        const drawSeg = () => seg.replaceChildren(
+          h('button', { class: inp.sex === 'm' ? 'on' : '', onclick: () => { inp.sex = 'm'; save(); drawSeg(); calcDraw(); } }, 'Masculino'),
+          h('button', { class: inp.sex === 'f' ? 'on' : '', onclick: () => { inp.sex = 'f'; save(); drawSeg(); calcDraw(); } }, 'Feminino'));
+        drawSeg();
+
+        root.append(h('div', { class: 'card' }, seg,
+          h('div', { class: 'grid3' }, num('age', 'Idade', 'anos'), num('weight', 'Peso (kg)', 'kg'), num('height', 'Altura (cm)', 'cm')),
+          num('bf', '% de gordura (opcional)', 'ex.: 15'),
+          h('div', { class: 'muted small', style: 'margin-top:-4px' }, 'Com o % de gordura o cálculo usa Katch-McArdle (mais preciso para quem treina). Sem ele, Mifflin-St Jeor.')));
+        root.append(out);
+
+        function calcDraw() {
+          const { age, weight: w, height: ht, bf } = inp;
+          if (!age || !w || !ht) { out.replaceChildren(h('div', { class: 'empty' }, 'Preencha idade, peso e altura.')); return; }
+          const useKatch = bf != null && bf > 2 && bf < 60;
+          const tmb = useKatch ? 370 + 21.6 * (w * (1 - bf / 100)) : 10 * w + 6.25 * ht - 5 * age + (inp.sex === 'm' ? 5 : -161);
+          const tdee = tmb * ACTIVITY[inp.act].f;
+          const target = Math.round((tdee + GOALS[inp.goal].d) / 10) * 10;
+
+          out.replaceChildren(
+            h('div', { class: 'stats' },
+              h('div', { class: 'stat' }, h('b', null, fmtNum(tmb, 0)), h('span', null, `kcal · TMB (${useKatch ? 'Katch-McArdle' : 'Mifflin-St Jeor'})`)),
+              h('div', { class: 'stat' }, h('b', null, fmtNum(tdee, 0)), h('span', null, 'kcal · gasto diário estimado'))),
+            h('div', { class: 'section' }, 'Nível de atividade'),
+            h('div', { class: 'list' }, ACTIVITY.map((a, i) => h('button', { class: 'list-item' + (i === inp.act ? ' sel' : ''), onclick: () => { inp.act = i; save(); calcDraw(); } },
+              h('span', { class: 'radio' + (i === inp.act ? ' on' : '') }),
+              h('div', { class: 'grow' }, h('div', { class: 'li-title' }, a.name), h('div', { class: 'li-sub' }, `${a.desc} · ×${String(a.f).replace('.', ',')}`)),
+              h('b', { class: 'small' }, kcalTxt(tmb * a.f))))),
+            h('div', { class: 'section' }, 'Objetivo'),
+            h('div', { class: 'list' }, GOALS.map((g, i) => h('button', { class: 'list-item' + (i === inp.goal ? ' sel' : ''), onclick: () => { inp.goal = i; save(); calcDraw(); } },
+              h('span', { class: 'radio' + (i === inp.goal ? ' on' : '') }),
+              h('div', { class: 'grow' }, h('div', { class: 'li-title' }, g.name), g.desc ? h('div', { class: 'li-sub' }, `${g.d > 0 ? '+' : ''}${g.d} kcal/dia · ${g.desc}`) : null),
+              h('b', { class: 'small' }, kcalTxt(tdee + g.d))))),
+            h('button', {
+              class: 'btn primary block', onclick: async () => {
+                if (!confirm(`Usar ${fmtNum(target, 0)} kcal como meta diária? A divisão de macros (${D.goal.pc}/${D.goal.pp}/${D.goal.pf}) continua a mesma.`)) return;
+                D.goal = { ...D.goal, kcal: target };
+                await db.put('kv', D.goal, 'dietGoal');
+                toast(`Meta atualizada: ${fmtNum(target, 0)} kcal`);
+                state.stack = []; render();
+              },
+            }, `Usar ${fmtNum(target, 0)} kcal como meta`),
+            h('p', { class: 'muted small' }, 'São estimativas (erro típico de ±10%). Acompanhe seu peso por 2–3 semanas e ajuste a meta conforme o resultado. Não substitui a orientação de um nutricionista.'));
+        }
+        calcDraw();
+      },
+    };
+  }
+
+  // ======================================================================
   // Backup
   // ======================================================================
-  const backupData = () => ({ foods: D.foods, recipes: D.recipes, days: [...D.days.values()], dietGoal: D.goal });
+  const backupData = () => ({ foods: D.foods, recipes: D.recipes, days: [...D.days.values()], dietGoal: D.goal, tmbInputs: D.tmb || null });
   async function restore(data) {
     if (data.dietGoal) await db.put('kv', data.dietGoal, 'dietGoal');
+    if (data.tmbInputs) await db.put('kv', data.tmbInputs, 'tmbInputs');
   }
 
   return { load, dietaView, backupData, restore };

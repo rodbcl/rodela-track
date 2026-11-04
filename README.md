@@ -14,6 +14,7 @@ js/db.js              IndexedDB
 js/util.js            utilitários
 js/chart.js           gráfico SVG
 js/dieta.js           módulo Dieta
+js/boxe.js            treino de boxe (timer de rounds)
 js/rest.js            timer de descanso (contagem, bipe, tela ligada)
 js/label.js           interpretador de tabela nutricional (RDC 429 e formato antigo)
 js/vendor/            ZXing (código de barras) e Tesseract.js + idioma português (OCR)
@@ -41,6 +42,7 @@ Veja [GUIA-GITHUB-PAGES.md](GUIA-GITHUB-PAGES.md).
 - **0.3.0**: timer de descanso com contagem regressiva e aviso sonoro (entre séries / entre exercícios / por exercício, ajustável ±15 s), tela ligada durante o treino; receitas entram inteiras na refeição com um toque (½, 1, 1,5, 2 receitas ao editar).
 - **0.3.1**: correção — a atualização agora sempre baixa os arquivos novos (ignorava o cache do GitHub Pages).
 - **0.3.2**: botão "Forçar atualização" em Ajustes e aviso quando algum arquivo do app ficar desatualizado no cache.
+- **0.4.0**: treino de boxe (rounds iguais ou personalizados, descanso, aviso X s antes do fim, gongo, preparação, cores verde/amarelo/vermelho), aviso de recorde de carga, resumo semanal da dieta e calculadora de TMB/gasto diário.
 
 ## Testar no iPhone pela rede local
 

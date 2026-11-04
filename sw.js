@@ -1,6 +1,6 @@
 // Rodela Track — Service Worker
 // IMPORTANTE: a cada atualização publicada, aumente VERSION para o iPhone baixar os arquivos novos.
-const VERSION = '0.3.2';
+const VERSION = '0.4.0';
 const CACHE = `rodela-${VERSION}`;
 const CDN_CACHE = 'rodela-cdn';
 
@@ -16,6 +16,7 @@ const ASSETS = [
   './js/dieta.js',
   './js/label.js',
   './js/rest.js',
+  './js/boxe.js',
   './js/vendor/zxing.min.js',
   './js/vendor/tesseract.min.js',
   './js/vendor/worker.min.js',
@@ -61,6 +62,7 @@ self.addEventListener('fetch', (e) => {
     return;
   }
   if (url.origin !== self.location.origin) return; // ex.: Open Food Facts → sempre rede
+  if (url.pathname.endsWith('/sw.js')) return; // nunca guardar o próprio service worker
 
   e.respondWith(
     caches.open(CACHE).then((c) => c.match(req, { ignoreSearch: true })).then((hit) => {

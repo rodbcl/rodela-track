@@ -1,5 +1,5 @@
 // Timer de descanso: contagem regressiva, aviso sonoro e tela ligada durante o treino
-export const REST_VERSION = '0.3.2';
+export const REST_VERSION = '0.4.0';
 let audio = null;
 
 /** Precisa ser chamado dentro de um toque do usuário (exigência do iOS para liberar o som). */
@@ -58,3 +58,50 @@ export const fmtClock = (s) => {
   s = Math.max(0, Math.ceil(s));
   return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
 };
+
+// ---------- Sons extras ----------
+function tone(freq, start, dur, { type = 'sine', gain = 0.5 } = {}) {
+  const o = audio.createOscillator();
+  const g = audio.createGain();
+  o.type = type;
+  o.frequency.value = freq;
+  g.gain.setValueAtTime(0.0001, start);
+  g.gain.exponentialRampToValueAtTime(gain, start + 0.01);
+  g.gain.exponentialRampToValueAtTime(0.0001, start + dur);
+  o.connect(g).connect(audio.destination);
+  o.start(start);
+  o.stop(start + dur + 0.05);
+}
+const ready = () => { if (!audio) return false; if (audio.state === 'suspended') audio.resume(); return true; };
+
+/** Arpejo ascendente para recorde. */
+export function prBeep() {
+  if (!ready()) return;
+  const t = audio.currentTime + 0.05;
+  [784, 988, 1175, 1568].forEach((f, i) => tone(f, t + i * 0.11, i === 3 ? 0.5 : 0.16, { gain: 0.45 }));
+}
+
+/** Sino de ringue (parciais inarmônicas), repetido `times` vezes. */
+export function bell(times = 1) {
+  if (!ready()) return;
+  const t0 = audio.currentTime + 0.05;
+  for (let k = 0; k < times; k++) {
+    const t = t0 + k * 0.45;
+    [[830, 0.5, 1.6], [2290, 0.25, 0.9], [3410, 0.12, 0.6], [4980, 0.06, 0.4]].forEach(([f, gn, d]) => tone(f, t, d, { gain: gn }));
+  }
+}
+
+/** Gongo grave e longo (fim do round). */
+export function gong() {
+  if (!ready()) return;
+  const t = audio.currentTime + 0.05;
+  [[180, 0.6, 3.2], [270, 0.35, 2.6], [496, 0.25, 2.0], [745, 0.15, 1.4], [1100, 0.08, 0.9]].forEach(([f, gn, d]) => tone(f, t, d, { gain: gn }));
+  bell(3);
+}
+
+/** Aviso de "faltam X segundos": 3 batidas secas. */
+export function warnClap() {
+  if (!ready()) return;
+  const t = audio.currentTime + 0.05;
+  for (let i = 0; i < 3; i++) tone(1500, t + i * 0.18, 0.06, { type: 'square', gain: 0.25 });
+}

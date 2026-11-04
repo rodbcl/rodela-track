@@ -7,12 +7,15 @@ import {
 import { lineChart } from './chart.js';
 import * as dietaMod from './dieta.js';
 import * as restMod from './rest.js';
-const { unlockAudio, beep, keepAwake, fmtClock } = restMod;
+import * as boxeMod from './boxe.js';
+const { unlockAudio, beep, keepAwake, fmtClock, prBeep } = restMod;
 const { createDieta } = dietaMod;
 // importação por namespace: se um arquivo estiver desatualizado no cache, a versão vem undefined em vez de quebrar o app
-const moduleVersions = () => ({ dieta: dietaMod.DIETA_VERSION, descanso: restMod.REST_VERSION });
+const moduleVersions = () => ({ dieta: dietaMod.DIETA_VERSION, descanso: restMod.REST_VERSION, boxe: boxeMod.BOXE_VERSION });
+const isBoxe = (t) => t?.kind === 'boxe';
+const editorFor = (t) => (isBoxe(t) ? boxe.boxeEditor(t) : templateEditor(t));
 
-const APP_VERSION = '0.3.2';
+const APP_VERSION = '0.4.0';
 const DEFAULT_SETTINGS = { restSet: 90, restEx: 120, sound: true, wake: true };
 
 const state = {
@@ -47,9 +50,11 @@ const icon = (name) => h('span', { style: 'display:contents', html: ICON[name] }
 // Inicialização
 // ======================================================================
 let dieta;
+let boxe;
 
 async function boot() {
   dieta = createDieta({ state, go, render, rerender, icon, pickFile });
+  boxe = boxeMod.createBoxe({ state, go, render, upsertSession });
   await loadAll();
   if (!state.templates.length && !(await db.get('kv', 'seeded'))) await seed();
   document.querySelectorAll('#tabbar button').forEach((b) => b.addEventListener('click', () => switchTab(b.dataset.tab)));
@@ -164,6 +169,19 @@ const rerender = () => render({ keepScroll: true });
 // ======================================================================
 // Helpers de dados
 // ======================================================================
+/** Maior carga já registrada num exercício (séries concluídas), ignorando um treino. */
+function bestWeight(key, excludeId) {
+  let best = null;
+  for (const s of state.sessions) {
+    if (s.id === excludeId) continue;
+    for (const e of s.exercises || []) {
+      if (e.key !== key) continue;
+      for (const x of e.sets) if (x.done && x.w != null && (best == null || x.w > best)) best = x.w;
+    }
+  }
+  return best;
+}
+
 function lastPerf(key, excludeId) {
   for (const s of state.sessions) {
     if (s.id === excludeId) continue;
@@ -174,9 +192,9 @@ function lastPerf(key, excludeId) {
 }
 
 function nextTemplateId() {
-  const t = state.templates;
+  const t = state.templates.filter((x) => !isBoxe(x)); // boxe fica fora da rotação A → B → C
   if (!t.length) return null;
-  const last = state.sessions.find((s) => s.templateId);
+  const last = state.sessions.find((s) => s.templateId && s.kind !== 'boxe' && t.some((x) => x.id === s.templateId));
   if (!last) return t[0].id;
   const i = t.findIndex((x) => x.id === last.templateId);
   return t[(i + 1) % t.length].id;
@@ -246,11 +264,14 @@ function treinoHome() {
             h('div', { class: 'grow' },
               h('div', { class: 'card-title' }, t.name, isNext ? h('span', { class: 'pill' }, 'próximo') : null),
               h('div', { class: 'muted small' },
-                `${t.exercises.length} exercício${t.exercises.length === 1 ? '' : 's'} · ` + (last ? `último ${relDays(last.date)}` : 'ainda não feito'))),
-            h('button', { class: 'icon-btn', 'aria-label': 'Editar treino', onclick: () => go(templateEditor(t)) }, icon('edit'))),
+                (isBoxe(t) ? `${boxeMod.boxSummary({ ...boxeMod.DEFAULT_BOX, ...t.box })} · ` : `${t.exercises.length} exercício${t.exercises.length === 1 ? '' : 's'} · `)
+                + (last ? `último ${relDays(last.date)}` : 'ainda não feito'))),
+            h('button', { class: 'icon-btn', 'aria-label': 'Editar treino', onclick: () => go(editorFor(t)) }, icon('edit'))),
           h('button', { class: 'btn block' + (isNext || !next ? ' primary' : ''), onclick: () => startSession(t) }, 'Iniciar')));
       }
-      root.append(h('button', { class: 'btn ghost block', onclick: () => go(templateEditor(null)) }, '+ Novo treino'));
+      root.append(h('div', { class: 'row' },
+        h('button', { class: 'btn ghost grow', onclick: () => go(templateEditor(null)) }, '+ Musculação'),
+        h('button', { class: 'btn ghost grow', onclick: () => go(boxe.boxeEditor(null)) }, '+ Boxe')));
     },
   };
 }
@@ -267,6 +288,7 @@ async function discardDraft() {
 }
 
 async function startSession(t) {
+  if (isBoxe(t)) { go(boxe.boxeTimerView(t)); return; }
   if (!t.exercises.length) {
     toast('Adicione exercícios a este treino primeiro');
     go(templateEditor(t));
@@ -447,6 +469,19 @@ function sessionView(sess, { draft }) {
         if (st.r == null) { toast('Informe as repetições'); rIn.focus(); return; }
         st.done = true;
         unlockAudio(); // o toque libera o som no iOS
+        // recorde de carga
+        st.pr = false;
+        if (st.w != null) {
+          const prev = bestWeight(ex.key, sess.id);
+          const others = ex.sets.filter((x) => x !== st && x.done && x.w != null).map((x) => x.w);
+          const inSess = others.length ? Math.max(...others) : null;
+          if (prev != null && st.w > prev && (inSess == null || st.w > inSess)) {
+            ex.sets.forEach((x) => { if (x !== st) x.pr = false; });
+            st.pr = true;
+            if (state.settings.sound) prBeep();
+            setTimeout(() => toast(`Novo recorde! ${ex.name}: ${fmtNum(st.w)} kg (antes ${fmtNum(prev)} kg)`), 50);
+          }
+        }
         const exDone = ex.sets.every((x) => x.done);
         const allDone = sess.exercises.every((e) => e.sets.every((x) => x.done));
         if (allDone) startRest(0);
@@ -454,12 +489,13 @@ function sessionView(sess, { draft }) {
         else startRest(ex.target?.rest || state.settings.restSet, 'entre séries');
       } else {
         st.done = false;
+        st.pr = false;
       }
       touch();
       rebuild();
     };
-    return h('div', { class: 'set-row' + (st.done ? ' done' : '') },
-      h('span', { class: 'set-n' }, j + 1), wIn, h('span', { class: 'x' }, '×'), rIn,
+    return h('div', { class: 'set-row' + (st.done ? ' done' : '') + (st.pr ? ' pr' : '') },
+      h('span', { class: 'set-n' }, st.pr ? h('span', { class: 'pr-badge', title: 'Recorde de carga' }, 'PR') : j + 1), wIn, h('span', { class: 'x' }, '×'), rIn,
       h('button', { class: 'check', 'aria-label': `Concluir série ${j + 1}`, onclick: onCheck }, '✓'));
   }
 
@@ -644,7 +680,7 @@ function historicoView() {
           h('div', { class: 'badge' }, s.short || '•'),
           h('div', { class: 'grow' },
             h('div', { class: 'li-title' }, s.templateName),
-            h('div', { class: 'li-sub' }, `${fmtDate(s.date)} · ${weekday(s.date)} · ${countSets(s)} séries`)),
+            h('div', { class: 'li-sub' }, `${fmtDate(s.date)} · ${weekday(s.date)} · ${s.kind === 'boxe' ? boxeMod.boxSessionSub(s) : `${countSets(s)} séries`}`)),
           icon('chev')))));
     },
   };
@@ -654,10 +690,23 @@ function sessionDetail(id) {
   const find = () => state.sessions.find((x) => x.id === id);
   return {
     get title() { return find()?.templateName || 'Treino'; },
-    get actions() { return [{ label: 'Editar', onclick: () => { const s = find(); if (s) go(sessionView(clone(s), { draft: false })); } }]; },
+    get actions() { return find()?.kind === 'boxe' ? [] : [{ label: 'Editar', onclick: () => { const s = find(); if (s) go(sessionView(clone(s), { draft: false })); } }]; },
     render(root) {
       const s = find();
       if (!s) { root.append(h('div', { class: 'empty' }, 'Treino não encontrado.')); return; }
+      if (s.kind === 'boxe') {
+        boxe.boxeDetail(s, root);
+        if (s.notes) root.append(h('div', { class: 'card mt' }, h('div', { class: 'muted small' }, 'Observações'), s.notes));
+        root.append(h('button', {
+          class: 'btn ghost danger block', onclick: async () => {
+            if (!confirm('Excluir este treino do histórico?')) return;
+            await db.del('sessions', s.id);
+            state.sessions = state.sessions.filter((x) => x.id !== s.id);
+            state.stack.pop(); render();
+          },
+        }, 'Excluir treino'));
+        return;
+      }
       const dur = s.startedAt && s.finishedAt ? s.finishedAt - s.startedAt : 0;
       const vol = volume(s);
       root.append(h('div', { class: 'stats' },
@@ -673,7 +722,7 @@ function sessionDetail(id) {
             h('button', { class: 'btn small ghost', onclick: () => go(exerciseChart(e.key)) }, 'Progresso')),
           e.sets.map((st, i) => h('div', { class: 'detail-set' },
             h('span', { class: 'muted' }, `Série ${i + 1}`),
-            h('span', null, st.w != null ? `${fmtNum(st.w)} kg × ${st.r}` : `${st.r} reps`)))));
+            h('span', null, st.pr ? h('span', { class: 'pr-badge', style: 'margin-right:6px' }, 'PR') : null, st.w != null ? `${fmtNum(st.w)} kg × ${st.r}` : `${st.r} reps`)))));
       }
       if (s.notes) root.append(h('div', { class: 'card' }, h('div', { class: 'muted small' }, 'Observações'), s.notes));
 
@@ -781,9 +830,11 @@ function ajustesView() {
       // Treinos
       root.append(h('div', { class: 'section' }, 'Treinos'));
       root.append(h('div', { class: 'list' },
-        state.templates.map((t) => h('button', { class: 'list-item', onclick: () => go(templateEditor(t)) },
-          h('div', { class: 'badge' }, t.short), h('div', { class: 'grow' }, h('div', { class: 'li-title' }, t.name), h('div', { class: 'li-sub' }, `${t.exercises.length} exercícios`)), icon('chev'))),
-        h('button', { class: 'list-item', onclick: () => go(templateEditor(null)) }, h('div', { class: 'li-title', style: 'color:var(--accent)' }, '+ Novo treino'))));
+        state.templates.map((t) => h('button', { class: 'list-item', onclick: () => go(editorFor(t)) },
+          h('div', { class: 'badge' }, t.short), h('div', { class: 'grow' }, h('div', { class: 'li-title' }, t.name),
+            h('div', { class: 'li-sub' }, isBoxe(t) ? boxeMod.boxSummary({ ...boxeMod.DEFAULT_BOX, ...t.box }) : `${t.exercises.length} exercícios`)), icon('chev'))),
+        h('button', { class: 'list-item', onclick: () => go(templateEditor(null)) }, h('div', { class: 'li-title', style: 'color:var(--accent)' }, '+ Novo treino de musculação')),
+        h('button', { class: 'list-item', onclick: () => go(boxe.boxeEditor(null)) }, h('div', { class: 'li-title', style: 'color:var(--accent)' }, '+ Novo treino de boxe'))));
 
       // Descanso
       const st = state.settings;
@@ -877,7 +928,7 @@ async function forceUpdate() {
     const keys = await caches.keys();
     await Promise.all(keys.filter((k) => k.startsWith('rodela-')).map((k) => caches.delete(k)));
     // renova também o cache HTTP do navegador (o GitHub Pages guarda arquivos por ~10 min)
-    const files = ['./', './index.html', './css/style.css', './js/app.js', './js/db.js', './js/util.js', './js/chart.js', './js/dieta.js', './js/label.js', './js/rest.js', './sw.js'];
+    const files = ['./', './index.html', './css/style.css', './js/app.js', './js/db.js', './js/util.js', './js/chart.js', './js/dieta.js', './js/label.js', './js/rest.js', './js/boxe.js', './sw.js'];
     await Promise.all(files.map((f) => fetch(f, { cache: 'reload' }).catch(() => {})));
     const regs = await navigator.serviceWorker?.getRegistrations?.() || [];
     await Promise.all(regs.map((r) => r.unregister()));
