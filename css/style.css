@@ -339,3 +339,4 @@ body.resting #toast { bottom: calc(var(--tabbar-h) + var(--sab) + 112px); }
 .rchip.on { background: var(--accent); color: var(--accent-ink); }
 .cb-set { padding: 12px 0; border-bottom: 1px solid var(--line); }
 [hidden] { display: none !important; }
+.bx-card.rest-warn { animation: bx-pulse 1s ease-in-out infinite; box-shadow: 0 0 0 6px #facc15 inset; }

@@ -9,15 +9,15 @@ import * as dietaMod from './dieta.js';
 import * as restMod from './rest.js';
 import * as boxeMod from './boxe.js';
 import * as combosMod from './combos.js';
-const { unlockAudio, beep, keepAwake, fmtClock, prBeep } = restMod;
+const { unlockAudio, beep, keepAwake, fmtClock, prBeep, setVolume } = restMod;
 const { createDieta } = dietaMod;
 // importação por namespace: se um arquivo estiver desatualizado no cache, a versão vem undefined em vez de quebrar o app
 const moduleVersions = () => ({ dieta: dietaMod.DIETA_VERSION, descanso: restMod.REST_VERSION, boxe: boxeMod.BOXE_VERSION, combos: combosMod.COMBOS_VERSION });
 const isBoxe = (t) => t?.kind === 'boxe';
 const editorFor = (t) => (isBoxe(t) ? boxe.boxeEditor(t) : templateEditor(t));
 
-const APP_VERSION = '0.5.1';
-const DEFAULT_SETTINGS = { restSet: 90, restEx: 120, sound: true, wake: true };
+const APP_VERSION = '0.5.2';
+const DEFAULT_SETTINGS = { restSet: 90, restEx: 120, sound: true, wake: true, volume: 'alto' };
 
 const state = {
   templates: [],
@@ -102,6 +102,7 @@ async function loadAll() {
   state.lastBackup = (await db.get('kv', 'lastBackup')) || null;
   state.nextOverride = (await db.get('kv', 'nextTpl')) || null;
   state.settings = { ...DEFAULT_SETTINGS, ...((await db.get('kv', 'settings')) || {}) };
+  setVolume(state.settings.volume);
   await dieta.load();
   await boxe.load();
 }
@@ -903,6 +904,15 @@ function ajustesView() {
         stepper('restSet', 'Entre séries'),
         stepper('restEx', 'Entre exercícios'),
         toggle('sound', 'Aviso sonoro'),
+        h('div', { class: 'set-item', style: 'display:block' }, h('div', null, 'Volume dos avisos'),
+          (() => {
+            const seg = h('div', { class: 'seg', style: 'margin:8px 0 0' });
+            const draw = () => seg.replaceChildren(...[['normal', 'Normal'], ['alto', 'Alto'], ['maximo', 'Máximo']].map(([v, l]) =>
+              h('button', { class: st.volume === v ? 'on' : '', onclick: () => { st.volume = v; setVolume(v); saveSettings(); draw(); unlockAudio(); beep(); } }, l)));
+            draw();
+            return seg;
+          })(),
+          h('div', { class: 'muted small', style: 'margin-top:6px' }, 'O volume do celular (botões laterais) também precisa estar alto. No iPhone, o modo silencioso pode bloquear os avisos.')),
         toggle('wake', 'Manter tela ligada no treino'),
         h('div', { class: 'set-item' },
           h('span', { class: 'muted small' }, 'Cada exercício pode ter seu próprio descanso entre séries (edite o treino).'),

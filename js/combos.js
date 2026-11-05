@@ -1,7 +1,7 @@
 // Rodela Track — gerador de combos de boxe (guarda destra)
 // Regras documentadas em spec-combos-boxe.md (R1–R21).
 
-export const COMBOS_VERSION = '0.5.1';
+export const COMBOS_VERSION = '0.5.2';
 
 // ---------------------------------------------------------------------------
 // Vocabulário

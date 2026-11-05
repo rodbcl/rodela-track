@@ -4,9 +4,9 @@ import { h, toast, todayISO, uid, clone, fmtNum } from './util.js';
 import { unlockAudio, keepAwake, fmtClock, bell, gong, warnClap, comboBeep } from './rest.js';
 import { DEFAULT_COMBO_CFG, DEFAULT_FAVORITES, MOVES, checkCombo, newCombo, grow, parseCombo, comboText } from './combos.js';
 
-export const BOXE_VERSION = '0.5.1';
+export const BOXE_VERSION = '0.5.2';
 
-export const DEFAULT_BOX = { rounds: 6, mode: 'same', roundSec: 180, custom: [], restSec: 60, warnSec: 10, prepSec: 10, comboRounds: [], combo: null };
+export const DEFAULT_BOX = { rounds: 6, mode: 'same', roundSec: 180, custom: [], restSec: 60, warnSec: 10, restWarnSec: 10, prepSec: 10, comboRounds: [], combo: null };
 const comboCfg = (box) => {
   const c = { ...DEFAULT_COMBO_CFG, ...(box.combo || {}) };
   c.allow = { ...DEFAULT_COMBO_CFG.allow, ...((box.combo && box.combo.allow) || {}) };
@@ -176,6 +176,7 @@ export function createBoxe(ctx) {
         root.append(h('div', { class: 'card' },
           item('Descanso entre rounds', stepper(() => b.restSec, (v) => { b.restSec = v; }, 15, 0, 600)),
           item('Aviso antes do fim do round', stepper(() => b.warnSec, (v) => { b.warnSec = v; }, 5, 0, 60, (v) => (v ? `${v} s` : 'off')), 'Batidas secas e relógio amarelo quando faltar esse tempo'),
+          item('Aviso antes do fim do descanso', stepper(() => b.restWarnSec, (v) => { b.restWarnSec = v; }, 5, 0, 60, (v) => (v ? `${v} s` : 'off')), 'Mesmas batidas do round: hora de voltar para a posição'),
           item('Preparação', stepper(() => b.prepSec, (v) => { b.prepSec = v; }, 5, 0, 120, (v) => (v ? `${v} s` : 'off')), 'Contagem só antes do 1º round')));
         // ---------- Combos (progressão) ----------
         b.combo = comboCfg(b);
@@ -408,6 +409,10 @@ export function createBoxe(ctx) {
           if (state.settings.sound) comboBeep();
         }
       }
+      if (p.type === 'rest' && box.restWarnSec > 0 && !run.warned && l <= box.restWarnSec && l > 0) {
+        run.warned = true;
+        if (state.settings.sound) warnClap();
+      }
       if (p.type === 'round' && box.warnSec > 0 && !run.warned && l <= box.warnSec && l > 0) {
         run.warned = true;
         if (state.settings.sound) warnClap();
@@ -483,7 +488,8 @@ export function createBoxe(ctx) {
       const p = cur() || phases[phases.length - 1];
       const l = run.started ? left() : p.sec;
       const type = run.done ? 'done' : p.type;
-      els.box.className = `bx-card ${type}` + (p.type === 'round' && run.started && !run.done && l <= box.warnSec && box.warnSec > 0 ? ' warn' : '') + (run.paused != null ? ' paused' : '');
+      els.box.className = `bx-card ${type}` + (p.type === 'round' && run.started && !run.done && l <= box.warnSec && box.warnSec > 0 ? ' warn' : '')
+        + (p.type === 'rest' && run.started && !run.done && l <= box.restWarnSec && box.restWarnSec > 0 ? ' rest-warn' : '') + (run.paused != null ? ' paused' : '');
       els.phase.textContent = run.done ? 'Concluído' : p.type === 'prep' ? 'Preparação' : p.type === 'rest' ? 'Descanso' : `Round ${p.n} de ${durs.length}`;
       els.time.textContent = run.done ? '✓' : fmtClock(l);
       const nextRound = phases.slice(run.idx + 1).find((x) => x.type === 'round');
