@@ -1,5 +1,5 @@
 // Timer de descanso: contagem regressiva, aviso sonoro e tela ligada durante o treino
-export const REST_VERSION = '0.5.2';
+export const REST_VERSION = '0.6.0';
 let audio = null;
 let out = null;          // ganho master → compressor → alto-falante
 let volume = 2.2;        // multiplicador do volume dos avisos

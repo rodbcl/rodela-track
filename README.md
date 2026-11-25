@@ -48,6 +48,7 @@ Veja [GUIA-GITHUB-PAGES.md](GUIA-GITHUB-PAGES.md).
 - **0.5.0**: gerador de combos de boxe com progressão por etapas (rounds escolhidos), favoritos, trocar/favoritar combo no timer, histórico de combos.
 - **0.5.1**: volta o ícone da anilha laranja.
 - **0.5.2**: aviso sonoro antes do fim do descanso no boxe; avisos mais altos (compressor) e opção de volume em Ajustes.
+- **0.6.0**: base destro/canhoto nos combos; esquiva depois de golpe vai para o lado da mão que golpeou (jab: qualquer lado).
 
 ## Testar no iPhone pela rede local
 

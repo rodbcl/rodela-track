@@ -2,9 +2,9 @@
 import * as db from './db.js';
 import { h, toast, todayISO, uid, clone, fmtNum } from './util.js';
 import { unlockAudio, keepAwake, fmtClock, bell, gong, warnClap, comboBeep } from './rest.js';
-import { DEFAULT_COMBO_CFG, DEFAULT_FAVORITES, MOVES, checkCombo, newCombo, grow, parseCombo, comboText } from './combos.js';
+import { DEFAULT_COMBO_CFG, DEFAULT_FAVORITES, MOVES, STANCES, checkCombo, newCombo, grow, parseCombo, comboText } from './combos.js';
 
-export const BOXE_VERSION = '0.5.2';
+export const BOXE_VERSION = '0.6.0';
 
 export const DEFAULT_BOX = { rounds: 6, mode: 'same', roundSec: 180, custom: [], restSec: 60, warnSec: 10, restWarnSec: 10, prepSec: 10, comboRounds: [], combo: null };
 const comboCfg = (box) => {
@@ -39,7 +39,7 @@ export function boxSummary(box) {
   const same = r.every((x) => x === r[0]);
   const cr = comboRoundsOf(box).length;
   return `${r.length} rounds × ${same ? fmtClock(r[0]) : 'tempos variados'} · descanso ${fmtClock(box.restSec)} · ~${fmtMin(totalSec(box))}`
-    + (cr ? ` · combos em ${cr === r.length ? 'todos os rounds' : `${cr} round${cr > 1 ? 's' : ''}`}` : '');
+    + (cr ? ` · combos em ${cr === r.length ? 'todos os rounds' : `${cr} round${cr > 1 ? 's' : ''}`} (${(comboCfg(box).stance === 'canhoto' ? 'canhoto' : 'destro')})` : '');
 }
 
 export function createBoxe(ctx) {
@@ -49,20 +49,22 @@ export function createBoxe(ctx) {
   async function load() {
     const favs = await db.get('kv', 'comboFavs');
     state.comboFavs = Array.isArray(favs) ? favs : DEFAULT_FAVORITES.slice();
+    // 1-2-E-3 deixou de ser válido (regra da esquiva pelo lado da mão que golpeou)
+    if (state.comboFavs.includes('1 2 E 3')) { state.comboFavs = state.comboFavs.filter((x) => x !== '1 2 E 3'); saveFavs(); }
   }
   const saveFavs = () => db.put('kv', state.comboFavs, 'comboFavs');
-  const validFavs = (cfg) => (state.comboFavs || []).map(parseCombo).filter((s) => !checkCombo(s) && s.length <= cfg.maxLen);
+  const validFavs = (cfg) => (state.comboFavs || []).map(parseCombo).filter((s) => !checkCombo(s, { stance: cfg.stance }) && s.length <= cfg.maxLen);
 
-  function favoritesView() {
+  function favoritesView(stance = 'destro') {
     return {
-      title: 'Combos favoritos',
+      title: `Favoritos · ${STANCES[stance] || 'Destro'}`,
       render(root) {
         const err = h('div', { class: 'warn small', style: 'min-height:18px;margin-top:6px' });
         const input = h('input', { class: 'input', placeholder: 'Ex.: 1 2 3B 3 P 2', autocapitalize: 'characters', autocomplete: 'off' });
         const add = async () => {
           const seq = parseCombo(input.value);
           if (!seq.length) return;
-          const e = checkCombo(seq);
+          const e = checkCombo(seq, { stance });
           if (e) { err.textContent = `Combo inválido: ${e}`; return; }
           const txt = seq.join(' ');
           if (state.comboFavs.includes(txt)) { err.textContent = 'Esse combo já está na lista'; return; }
@@ -72,7 +74,8 @@ export function createBoxe(ctx) {
         const list = h('div');
         const draw = () => list.replaceChildren(state.comboFavs.length
           ? h('div', { class: 'list' }, state.comboFavs.map((f, i) => h('div', { class: 'list-item' },
-            h('div', { class: 'grow' }, comboChips(parseCombo(f), 'small')),
+            h('div', { class: 'grow' }, comboChips(parseCombo(f), 'small'),
+              (() => { const e = checkCombo(parseCombo(f), { stance }); return e ? h('div', { class: 'warn small', style: 'margin-top:4px' }, `Não vale para ${STANCES[stance].toLowerCase()}: ${e}`) : null; })()),
             h('button', { class: 'icon-btn danger', 'aria-label': 'Remover', onclick: async () => { state.comboFavs.splice(i, 1); await saveFavs(); draw(); } }, '✕'))))
           : h('div', { class: 'empty' }, 'Nenhum favorito.'));
         root.append(h('div', { class: 'card' },
@@ -207,6 +210,8 @@ export function createBoxe(ctx) {
               h('button', { class: 'btn small', onclick: () => { b.comboRounds = []; touch(); drawCombo(); upd(); } }, 'Nenhum')),
           ];
           if (b.comboRounds.length) {
+            parts.push(block('Base de quem vai treinar', segc([['destro', 'Destro'], ['canhoto', 'Canhoto']], () => cc.stance, (v) => { cc.stance = v; drawCombo(); }),
+              'Define a mão de cada golpe e o lado das esquivas e pivôs'));
             const stageSec = Math.round(Math.min(...roundDurations(b)) / cc.stages);
             parts.push(
               item('Etapas por round', stepper(() => cc.stages, (v) => { cc.stages = v; drawCombo(); }, 1, 1, 6, (v) => String(v)), `O combo cresce a cada ~${fmtClock(stageSec)}`),
@@ -220,7 +225,7 @@ export function createBoxe(ctx) {
               h('div', { class: 'cb-set' }, h('div', null, 'Movimentos permitidos'),
                 h('div', { class: 'rchips', style: 'margin-top:6px' }, [['body', 'Golpes no corpo'], ['slip', 'Esquivas'], ['roll', 'Pêndulo'], ['block', 'Bloqueios'], ['step', 'Passos'], ['pivot', 'Pivôs']].map(([k, l]) =>
                   h('button', { class: 'rchip' + (cc.allow[k] ? ' on' : ''), onclick: () => { cc.allow[k] = !cc.allow[k]; touch(); drawCombo(); } }, l)))),
-              h('button', { class: 'btn small block', onclick: () => go(favoritesView()) }, `Combos favoritos (${(state.comboFavs || []).length})`),
+              h('button', { class: 'btn small block', onclick: () => go(favoritesView(cc.stance)) }, `Combos favoritos (${(state.comboFavs || []).length})`),
               h('div', { class: 'muted small', style: 'margin-top:8px' }, 'Exemplo: ', comboChips(sampleProgression(b), 'small')));
           }
           comboBox.replaceChildren(...parts);

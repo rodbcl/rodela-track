@@ -23,7 +23,14 @@ Funciona como um modo opcional dentro do treino de boxe que já existe. Serve pa
 | PVE | Pivô para a esquerda | Movimentação | — |
 | PVD | Pivô para a direita | Movimentação | — |
 
-> Base: **guarda destra (ortodoxa)** ✔ confirmada: mão da frente = esquerda, mão de trás = direita.
+> **Base configurável** no treino de boxe:
+> - **Destro (ortodoxa):** mão da frente = esquerda, mão de trás = direita.
+> - **Canhoto:** mão da frente = direita, mão de trás = esquerda. Esquivas e pivôs se espelham.
+>
+> | Golpe | Destro | Canhoto |
+> |---|---|---|
+> | 1, 3, 5 (frente) | esquerda | direita |
+> | 2, 4, 6 (trás) | direita | esquerda |
 
 ## 2. Configuração (no treino de boxe)
 
@@ -62,9 +69,10 @@ Funcionamento: o app escolhe cada próximo movimento olhando os anteriores, com 
 ### Defesas
 - R8. Depois de golpe de trás (2, 4, 6) → **E** ou **P** fazem sentido (o oponente "devolve").
 - R9. Depois de 3 → **D** ou **P**.
-- R10. A esquiva carrega uma perna e prepara o golpe daquele lado:
-  - **E** (peso na perna da frente) → **3, 3B, 5** (mão da frente). Ex.: 1-E-3B-3
-  - **D** (peso na perna de trás) → **2, 4, 6** (mão de trás). Ex.: 1-2-D-2
+- R10a. **Esquiva logo depois de golpe vai para o lado da mão que golpeou**: golpe de direita → **D**, golpe de esquerda → **E**. **Exceção: jab** (1/1B) aceita esquiva para os dois lados.
+  - Destro: 2-D ✔ · 2-E ✗ · 3-E ✔ · 3-D ✗ · 1-E ✔ · 1-D ✔
+  - Canhoto: 2-E ✔ · 2-D ✗ · 3-D ✔ · 3-E ✗
+- R10b. Depois da esquiva vem golpe (não jab) da mesma mão do lado da esquiva: **E → golpe de esquerda**, **D → golpe de direita**. Ex. destro: 1-E-3B-3, 1-2-D-2.
 - R11. Pêndulo é seguido de golpe (nunca de outra defesa), geralmente o cruzado: ex.: 1-P-3-4.
 - R12. Bloqueio vem no meio ou no fim, seguido de contra-ataque: BF → 2 ou 4, BT → 3 ou 1.
 - R13. No máximo **2 defesas seguidas**. O combo nunca termina com 2 defesas.
@@ -73,7 +81,7 @@ Funcionamento: o app escolhe cada próximo movimento olhando os anteriores, com 
 ### Movimentação
 - R14. **PF** vem antes de golpe (geralmente 1 ou 2).
 - R15. **PT** e pivôs aparecem no fim ou depois de uma sequência de golpes.
-- R16. **PVE** depois de 3 ou 1; **PVD** depois de 2 ou 4.
+- R16. Pivô para o lado da mão da frente depois de 1 ou 3, para o lado da mão de trás depois de 2 ou 4. Destro: **PVE** após 1/3, **PVD** após 2/4. Canhoto: espelhado.
 - R17. No máximo 1 passo ou pivô por bloco de 4 movimentos.
 
 ### Fim do combo
@@ -108,12 +116,12 @@ Combos que já vêm cadastrados:
 | Combo | | Combo |
 |---|---|---|
 | 1 · 2 | | 1 · 2 · D · 2 |
-| 1 · 2 · 3 | | 1 · 2 · E · 3 |
+| 1 · 2 · 3 | | ~~1 · 2 · E · 3~~ (removido: inválido pela R10a) |
 | 1 · 1 · 2 | | 1 · E · 3B · 3 |
 | 2 · 3 · 2 | | 1 · P · 3 · 4 |
 | 1 · 2 · 3B · 3 | | 3B · 4B · 3 |
 
-> ✗ **1-2-E-2 é inválido**: a esquiva E prepara a mão da frente. É um caso de teste: o gerador nunca pode produzir esse combo, e a biblioteca recusa se você digitar.
+> ✗ **1-2-E-2 e 1-2-E-3 são inválidos (destro)**: depois do 2 (mão direita) a esquiva é D. É um caso de teste: o gerador nunca pode produzir esse combo, e a biblioteca recusa se você digitar.
 
 
 - Os favoritos podem ser salvos pelo timer (★) ou digitados ("1 2 3B 3 P 2").
@@ -126,6 +134,8 @@ Combos que já vêm cadastrados:
 - [x] Guarda destra
 - [x] Combos clássicos na biblioteca
 - [x] R10 corrigida (E → mão da frente, D → mão de trás)
+- [x] R10a: esquiva depois de golpe vai para o lado da mão que golpeou (jab: qualquer lado)
+- [x] Base destro/canhoto configurável
 - [x] 1-2-D-2 e 1-2-E-3 válidos; 1-2-E-2 inválido
 
 **Especificação fechada. Pronta para implementar.**

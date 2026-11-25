@@ -1,7 +1,7 @@
-// Rodela Track — gerador de combos de boxe (guarda destra)
+// Rodela Track — gerador de combos de boxe (guarda destra ou canhota)
 // Regras documentadas em spec-combos-boxe.md (R1–R21).
 
-export const COMBOS_VERSION = '0.5.2';
+export const COMBOS_VERSION = '0.6.0';
 
 // ---------------------------------------------------------------------------
 // Vocabulário
@@ -26,21 +26,31 @@ const M = (c) => MOVES[c];
 const isPunch = (c) => M(c)?.type === 'punch';
 const isDef = (c) => M(c)?.type === 'def';
 const isMove = (c) => M(c)?.type === 'move';
-const FRONT_FROM_SLIP = ['3', '3B', '5', '5B'];
-const BACK_FROM_SLIP = ['2', '2B', '4', '4B', '6', '6B'];
+
+// Mão física de cada golpe conforme a base: destro → frente = esquerda; canhoto → frente = direita
+export const STANCES = { destro: 'Destro', canhoto: 'Canhoto' };
+const handOf = (c, stance) => {
+  const m = M(c);
+  if (!m || m.type !== 'punch') return null;
+  const frontIsLeft = stance !== 'canhoto';
+  return (m.side === 'front') === frontIsLeft ? 'L' : 'R';
+};
+const slipDir = (c) => (c === 'E' ? 'L' : c === 'D' ? 'R' : null);
+const isJab = (c) => M(c)?.base === 1;
+const HAND_NAME = { L: 'esquerda', R: 'direita' };
 
 export const DEFAULT_COMBO_CFG = {
-  stages: 3, startLen: 3, inc: 'rand', maxLen: 8, between: 'continue', atMax: 'new',
+  stance: 'destro', stages: 3, startLen: 3, inc: 'rand', maxLen: 8, between: 'continue', atMax: 'new',
   difficulty: 'mid', source: 'mix',
   allow: { body: true, slip: true, roll: true, block: true, step: true, pivot: true },
 };
 
-export const DEFAULT_FAVORITES = ['1 2', '1 2 3', '1 1 2', '2 3 2', '1 2 3B 3', '1 2 D 2', '1 2 E 3', '1 E 3B 3', '1 P 3 4', '3B 4B 3'];
+export const DEFAULT_FAVORITES = ['1 2', '1 2 3', '1 1 2', '2 3 2', '1 2 3B 3', '1 2 D 2', '1 E 3B 3', '1 P 3 4', '3B 4B 3'];
 
 // ---------------------------------------------------------------------------
 // Validação (regras rígidas). Retorna null se válido, ou a mensagem do problema.
 // ---------------------------------------------------------------------------
-export function checkCombo(seq, { open = false } = {}) {
+export function checkCombo(seq, { open = false, stance = 'destro' } = {}) {
   // open=true: combo ainda em construção (ignora regras que dependem do final)
   if (!seq.length) return 'Combo vazio';
   for (const c of seq) if (!M(c)) return `Código desconhecido: ${c}`;
@@ -69,14 +79,19 @@ export function checkCombo(seq, { open = false } = {}) {
 
     // R10/R13b: esquivas
     if (c === 'E' || c === 'D') {
+      const dir = slipDir(c);
+      // R10a: esquiva logo depois de golpe vai para o lado da mão que golpeou (jab: qualquer lado)
+      if (prev && isPunch(prev) && !isJab(prev) && handOf(prev, stance) !== dir) {
+        return `Depois de ${prev} (mão ${HAND_NAME[handOf(prev, stance)]}) a esquiva é ${handOf(prev, stance) === 'L' ? 'E' : 'D'}, não ${c}`;
+      }
       if (next) {
         const other = c === 'E' ? 'D' : 'E';
-        const allowed = c === 'E' ? FRONT_FROM_SLIP : BACK_FROM_SLIP;
         if (next === c) return `Duas esquivas para o mesmo lado (${c}-${c})`;
         if (next === other) {
           if (prev === 'E' || prev === 'D') return 'Três esquivas seguidas';
-        } else if (!allowed.includes(next)) {
-          return c === 'E' ? `Depois de E vem golpe da mão da frente (3, 3B, 5), não ${next}` : `Depois de D vem golpe da mão de trás (2, 4, 6), não ${next}`;
+        } else if (!(isPunch(next) && !isJab(next) && handOf(next, stance) === dir)) {
+          // R10b: a esquiva carrega aquele lado e prepara golpe da mesma mão
+          return `Depois de ${c} vem golpe da mão ${HAND_NAME[dir]}, não ${next}`;
         }
       }
     }
@@ -94,8 +109,11 @@ export function checkCombo(seq, { open = false } = {}) {
     if (c === 'PF' && (endRule || (next && !isPunch(next)))) return 'Depois do passo à frente vem um golpe';
     // R15/R16: passo para trás e pivôs depois de golpe
     if (c === 'PT' && !(prev && isPunch(prev))) return 'Passo para trás vem depois de golpe';
-    if (c === 'PVE' && !['1', '3', '3B'].includes(prev)) return 'Pivô para a esquerda vem depois de 1 ou 3';
-    if (c === 'PVD' && !['2', '4', '4B'].includes(prev)) return 'Pivô para a direita vem depois de 2 ou 4';
+    // R16: pivô para o lado da mão da frente depois de 1/3; para o lado da mão de trás depois de 2/4 (espelha no canhoto)
+    const frontPivot = stance === 'canhoto' ? 'PVD' : 'PVE';
+    const backPivot = stance === 'canhoto' ? 'PVE' : 'PVD';
+    if (c === frontPivot && !['1', '3', '3B'].includes(prev)) return `${c} vem depois de 1 ou 3`;
+    if (c === backPivot && !['2', '4', '4B'].includes(prev)) return `${c} vem depois de 2 ou 4`;
     if (isMove(c)) moveIdx.push(i);
   }
   // R17: no máximo 1 passo/pivô a cada 4 movimentos
@@ -149,8 +167,7 @@ function weight(seq, c, cfg, isLastSlot) {
     w = 0.5 * mul.def;
     if (c === 'E' || c === 'D') {
       if (pm.type === 'def') w = 0.25 * mul.def; // R13b: raro
-      if (c === 'E' && ['2', '4', '6'].includes(prev)) w *= 2.5; // R8
-      if (c === 'D' && ['3', '1'].includes(prev)) w *= 2; // R9
+      if (pm.type === 'punch') w *= isJab(prev) ? 1.3 : 2.5; // esquiva depois de golpe é natural
     }
     if (c === 'P' && ['2', '3', '4'].includes(prev)) w *= 2;
     if (m.group === 'block') w *= 0.6;
@@ -186,16 +203,16 @@ export function extend(base, k, cfg = DEFAULT_COMBO_CFG, rnd = Math.random) {
       const isLast = i === k - 1;
       const cand = codes
         .map((c) => ({ c, w: weight(seq, c, cfg, isLast) }))
-        .filter((x) => x.w > 0 && prefixOk([...seq, x.c]));
+        .filter((x) => x.w > 0 && prefixOk([...seq, x.c], cfg.stance));
       if (!cand.length) { ok = false; break; }
       seq.push(pick(cand, rnd));
     }
-    if (ok && !checkCombo(seq)) return seq;
+    if (ok && !checkCombo(seq, { stance: cfg.stance })) return seq;
   }
   return null;
 }
 
-const prefixOk = (seq) => !checkCombo(seq, { open: true });
+const prefixOk = (seq, stance) => !checkCombo(seq, { open: true, stance });
 
 export function newCombo(len, cfg = DEFAULT_COMBO_CFG, rnd = Math.random) {
   return extend([], Math.max(1, len), cfg, rnd) || ['1', '2'];
